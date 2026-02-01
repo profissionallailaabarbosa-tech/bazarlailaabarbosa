@@ -1,0 +1,21 @@
+/* 1. O Import da fonte TEM QUE SER A PRIMEIRA LINHA */
+@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&family=Inter:wght@300;400;500;600&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --font-brand: "Great Vibes", cursive;
+  --color-rose-500: #f43f5e;
+  --color-creme: #F9EAE1;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: white;
+}
+
+/* Força a classe a usar a fonte carregada */
+.brand-name {
+  font-family: 'Great Vibes', cursive !important;
+}
