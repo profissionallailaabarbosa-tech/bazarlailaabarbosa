@@ -51,34 +51,31 @@ Deno.serve(async (req) => {
       return json(200, { ignored: true, reason: "missing_external_reference" });
     }
 
-    const isApproved = mp.status === "approved";
-    const orderStatus = isApproved ? "Pago" : "Pendente";
-
-    const updatePayload: Record<string, unknown> = {
-      payment_provider: "mercado_pago",
-      payment_id: String(mp.id),
-      payment_status: String(mp.status),
-      status: orderStatus,
-    };
-
-    if (isApproved) {
-      updatePayload.paid_at = new Date().toISOString();
+    const parsedOrderId = Number(orderId);
+    if (!Number.isFinite(parsedOrderId)) {
+      return json(200, { ignored: true, reason: "invalid_external_reference" });
     }
 
-    const upRes = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, {
-      method: "PATCH",
+    const captureRes = await fetch(`${supabaseUrl}/rest/v1/rpc/capture_paid_order_with_stock`, {
+      method: "POST",
       headers: {
         apikey: serviceRole,
         Authorization: `Bearer ${serviceRole}`,
         "Content-Type": "application/json",
-        Prefer: "return=minimal",
+        Prefer: "return=representation",
       },
-      body: JSON.stringify(updatePayload),
+      body: JSON.stringify({
+        p_order_id: parsedOrderId,
+        p_payment_status: String(mp.status),
+        p_payment_id: String(mp.id),
+        p_payment_provider: "mercado_pago",
+        p_paid_at: new Date().toISOString(),
+      }),
     });
 
-    if (!upRes.ok) {
-      const txt = await upRes.text();
-      return json(400, { error: "order_update_failed", details: txt });
+    if (!captureRes.ok) {
+      const txt = await captureRes.text();
+      return json(400, { error: "order_capture_failed", details: txt });
     }
 
     return json(200, { ok: true, order_id: orderId, payment_status: mp.status });
