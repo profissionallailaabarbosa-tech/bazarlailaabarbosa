@@ -8,7 +8,7 @@ export default function Footer() {
   useEffect(() => {
     async function load() {
       const settings = await db.settings.get();
-      setWhatsapp(settings.whatsapp_number || "5511999999999");
+      setWhatsapp(settings.whatsapp_number || settings.whatsapp || "5511999999999");
     }
     load();
   }, []);

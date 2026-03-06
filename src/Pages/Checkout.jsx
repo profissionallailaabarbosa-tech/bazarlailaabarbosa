@@ -157,7 +157,10 @@ export default function Checkout() {
 
       const msg = `*NOVO PEDIDO #${order.id}* 🎉\n\n*Cliente:* ${formData.name}\n*Pagamento:* ${textoPagamento}\n*Entrega:* ${formData.delivery_method}\n\n*Itens:*\n${itemsList}\n\n*Total:* R$ ${total.toFixed(2)}${avisoExtra}`;
       
-      const whatsappUrl = `https://wa.me/${config?.whatsapp_number}?text=${encodeURIComponent(msg)}`;
+      const whatsappNumber = String(
+        config?.whatsapp_number || config?.whatsapp || "5511990174644"
+      ).replace(/\D/g, "");
+      const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`;
       
       localStorage.removeItem("carrinho_laila");
       localStorage.removeItem("cart");

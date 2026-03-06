@@ -3,8 +3,14 @@ import { createClient } from "@supabase/supabase-js";
 // ----------------------
 // 1. CONEXÃO COM O SUPABASE
 // ----------------------
-export const supabaseUrl = "https://hrdwdnrpclmodsplcgkp.supabase.co";
-export const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyZHdkbnJwY2xtb2RzcGxjZ2twIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3OTk5NDQsImV4cCI6MjA4NTM3NTk0NH0.ULBLUdE8EOlhFH948IRVMB4P6615kLwZitkGBiZP_Yo";
+export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+export const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error(
+    "Variaveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY nao configuradas."
+  );
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 

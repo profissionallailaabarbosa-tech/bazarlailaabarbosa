@@ -11,6 +11,8 @@ const Switch = ({ checked, onChange }) => (
     <div className={`w-3 h-3 bg-white rounded-full shadow-md absolute top-1 transition-all duration-300 ${checked ? 'left-6' : 'left-1'}`} />
   </button>
 );
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
+const ADMIN_SESSION_KEY = "admin_auth";
 
 export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -31,7 +33,7 @@ export default function Admin() {
   const [config, setConfig] = useState({});
 
   useEffect(() => { 
-    const isAuth = sessionStorage.getItem("admin_auth");
+    const isAuth = sessionStorage.getItem(ADMIN_SESSION_KEY);
     if (isAuth) {
         setIsAuthenticated(true);
         loadData(); 
@@ -41,9 +43,14 @@ export default function Admin() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    if (passwordInput === "laila123") {
+    if (!ADMIN_PASSWORD) {
+        alert("Defina VITE_ADMIN_PASSWORD no .env");
+        return;
+    }
+
+    if (passwordInput === ADMIN_PASSWORD) {
         setIsAuthenticated(true);
-        sessionStorage.setItem("admin_auth", "true");
+        sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
         loadData();
         loadConfig();
     } else {
@@ -63,7 +70,12 @@ export default function Admin() {
   async function loadConfig() {
     try {
       const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
-      if (data) setConfig(data);
+      if (data) {
+        setConfig({
+          ...data,
+          whatsapp_number: data.whatsapp_number || data.whatsapp || "",
+        });
+      }
     } catch (error) { console.log("Erro config", error); }
   }
 
@@ -183,7 +195,13 @@ export default function Admin() {
     try {
       setSavingConfig(true);
       const { id, ...configData } = config;
-      const { error } = await supabase.from('settings').update(configData).eq('id', 1);
+      const whatsappNumber = configData.whatsapp_number || configData.whatsapp || "";
+      const payload = {
+        ...configData,
+        whatsapp_number: whatsappNumber,
+        whatsapp: whatsappNumber,
+      };
+      const { error } = await supabase.from('settings').update(payload).eq('id', 1);
       if (error) throw error;
       alert("Configurações Salvas com Sucesso! ✅");
     } catch (err) { 
@@ -204,7 +222,7 @@ export default function Admin() {
           <button onClick={() => setActiveTab("products")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "products" ? "bg-rose-500 text-white" : "bg-gray-100"}`}>Produtos</button>
           <button onClick={() => setActiveTab("orders")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "orders" ? "bg-rose-500 text-white" : "bg-gray-100"}`}>Pedidos</button>
           <button onClick={() => setActiveTab("config")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "config" ? "bg-rose-500 text-white" : "bg-gray-100"}`}>Configurações</button>
-          <button onClick={() => { setIsAuthenticated(false); sessionStorage.removeItem("admin_auth"); }} className="ml-2 px-3 py-2 rounded-full border border-gray-200 text-red-500 hover:bg-red-50">Sair</button>
+          <button onClick={() => { setIsAuthenticated(false); sessionStorage.removeItem(ADMIN_SESSION_KEY); }} className="ml-2 px-3 py-2 rounded-full border border-gray-200 text-red-500 hover:bg-red-50">Sair</button>
         </div>
       </header>
 
@@ -302,7 +320,7 @@ export default function Admin() {
                  </div>
                  <div>
                    <label className="block text-xs font-bold text-gray-500 mb-1">WhatsApp</label>
-                   <input className="w-full p-2 border border-gray-200 rounded text-sm" placeholder="Ex: 5511..." value={config.whatsapp_number} onChange={e => setConfig({...config, whatsapp_number: e.target.value})} />
+                   <input className="w-full p-2 border border-gray-200 rounded text-sm" placeholder="Ex: 5511..." value={config.whatsapp_number || ""} onChange={e => setConfig({...config, whatsapp_number: e.target.value})} />
                  </div>
                </div>
             </div>
