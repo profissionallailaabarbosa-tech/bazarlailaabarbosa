@@ -105,7 +105,18 @@ export default function Checkout() {
     return true;
   };
 
+  const isDeliveryMethodAvailable = (method) => {
+    if (method === "correios") return !!config?.enable_shipping_calc;
+    if (method === "retirada") return !!config?.enable_pickup;
+    if (method === "uber") return !!config?.enable_uber;
+    return false;
+  };
+
   const handleFinalize = async () => {
+    if (!isDeliveryMethodAvailable(formData.delivery_method)) {
+      alert("Selecione uma forma de entrega antes de continuar.");
+      return;
+    }
     setLoading(true);
     try {
       const addressFull = formData.delivery_method === 'retirada' 
@@ -311,7 +322,18 @@ export default function Checkout() {
 
                         <div className="mt-6 flex gap-3">
                             <button onClick={() => setCurrentStep(1)} className="flex-1 border border-gray-300 text-gray-600 px-4 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar</button>
-                            <button onClick={() => setCurrentStep(3)} className="flex-1 bg-rose-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-200">Ir para Pagamento</button>
+                            <button
+                              onClick={() => {
+                                if (!isDeliveryMethodAvailable(formData.delivery_method)) {
+                                  alert("Selecione uma forma de entrega para continuar.");
+                                  return;
+                                }
+                                setCurrentStep(3);
+                              }}
+                              className="flex-1 bg-rose-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-200"
+                            >
+                              Ir para Pagamento
+                            </button>
                         </div>
                     </div>
                 )}
