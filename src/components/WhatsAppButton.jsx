@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { db } from '../api/supabase';
+import { resolveWhatsAppBase } from "../utils/whatsapp";
 
 export default function WhatsAppButton() {
   const [link, setLink] = useState("https://wa.me/"); // Link padrão vazio
@@ -9,8 +10,8 @@ export default function WhatsAppButton() {
     async function loadWhats() {
       const settings = await db.settings.get();
       // Se tiver número salvo, cria o link. Se não, deixa um padrão.
-      const number = settings.whatsapp_number || settings.whatsapp || "5511990174644";
-      setLink(`https://wa.me/${number}`);
+      const source = settings.whatsapp_number || settings.whatsapp;
+      setLink(resolveWhatsAppBase(source));
     }
     loadWhats();
   }, []);

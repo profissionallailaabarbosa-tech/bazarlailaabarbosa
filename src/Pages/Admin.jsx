@@ -319,8 +319,8 @@ export default function Admin() {
                    </div>
                  </div>
                  <div>
-                   <label className="block text-xs font-bold text-gray-500 mb-1">WhatsApp</label>
-                   <input className="w-full p-2 border border-gray-200 rounded text-sm" placeholder="Ex: 5511..." value={config.whatsapp_number || ""} onChange={e => setConfig({...config, whatsapp_number: e.target.value})} />
+                   <label className="block text-xs font-bold text-gray-500 mb-1">WhatsApp (numero ou link)</label>
+                   <input className="w-full p-2 border border-gray-200 rounded text-sm" placeholder="Ex: 5511999999999 ou https://wa.me/5511999999999" value={config.whatsapp_number || ""} onChange={e => setConfig({...config, whatsapp_number: e.target.value})} />
                  </div>
                </div>
             </div>

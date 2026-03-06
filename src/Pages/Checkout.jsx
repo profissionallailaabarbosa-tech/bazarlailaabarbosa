@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../api/supabase";
+import { buildWhatsAppLink } from "../utils/whatsapp";
 import { 
   ShoppingBag, CreditCard, Smartphone, MapPin, User, Truck, Car, 
   Check, Edit2, Loader2, ArrowLeft, Copy, Clock, Camera, ExternalLink
@@ -157,10 +158,8 @@ export default function Checkout() {
 
       const msg = `*NOVO PEDIDO #${order.id}* 🎉\n\n*Cliente:* ${formData.name}\n*Pagamento:* ${textoPagamento}\n*Entrega:* ${formData.delivery_method}\n\n*Itens:*\n${itemsList}\n\n*Total:* R$ ${total.toFixed(2)}${avisoExtra}`;
       
-      const whatsappNumber = String(
-        config?.whatsapp_number || config?.whatsapp || "5511990174644"
-      ).replace(/\D/g, "");
-      const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`;
+      const whatsappSource = config?.whatsapp_number || config?.whatsapp;
+      const whatsappUrl = buildWhatsAppLink(whatsappSource, msg);
       
       localStorage.removeItem("carrinho_laila");
       localStorage.removeItem("cart");

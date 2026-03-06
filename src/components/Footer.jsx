@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Instagram } from "lucide-react";
 import { db } from "../api/supabase";
+import { resolveWhatsAppBase } from "../utils/whatsapp";
 
 export default function Footer() {
   const [whatsapp, setWhatsapp] = useState("");
@@ -8,7 +9,8 @@ export default function Footer() {
   useEffect(() => {
     async function load() {
       const settings = await db.settings.get();
-      setWhatsapp(settings.whatsapp_number || settings.whatsapp || "5511999999999");
+      const source = settings.whatsapp_number || settings.whatsapp;
+      setWhatsapp(resolveWhatsAppBase(source));
     }
     load();
   }, []);
@@ -38,7 +40,7 @@ export default function Footer() {
         <div>
           <h3 className="font-bold text-lg mb-4">Fale Conosco</h3>
           <a
-            href={`https://wa.me/${whatsapp}`}
+            href={whatsapp}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex bg-green-500 p-3 rounded-full hover:scale-105 transition"
