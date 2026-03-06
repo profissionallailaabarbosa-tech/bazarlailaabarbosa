@@ -114,8 +114,7 @@ export default function Checkout() {
 
       // Status Inteligente
       let statusPagamentoBanco = 'Pendente';
-      if (formData.payment_method === 'pix' && pixPaid) statusPagamentoBanco = 'Pago (Verificar)';
-      if (formData.payment_method === 'card') statusPagamentoBanco = 'Aguardando Cartão';
+      if (formData.payment_method === 'pix' || formData.payment_method === 'card') statusPagamentoBanco = 'Aguardando Pagamento';
 
       const { data: order, error } = await supabase.rpc("create_order_with_stock", {
         p_customer_name: formData.name,
@@ -147,7 +146,7 @@ export default function Checkout() {
       }
 
       const msg = `*NOVO PEDIDO #${order?.id}* 🎉\n\n*Cliente:* ${formData.name}\n*Pagamento:* ${textoPagamento}\n*Entrega:* ${formData.delivery_method}\n\n*Itens:*\n${itemsList}\n\n*Total:* R$ ${total.toFixed(2)}${avisoExtra}`;
-      if (formData.payment_method === "card") {
+      if (formData.payment_method === "card" || formData.payment_method === "pix") {
         const origin = window.location.origin;
         const paymentItems = cart.map((item) => ({
           id: item.id,
@@ -352,7 +351,7 @@ export default function Checkout() {
                         <h2 className="font-bold text-lg mb-4 text-gray-800 border-b pb-2">Resumo Geral</h2>
                         
                         {/* --- LÓGICA DO PIX --- */}
-                        {formData.payment_method === 'pix' && config?.pix_key && (
+                        {false && (
                             <div className="bg-green-50 border border-green-200 p-4 rounded-xl mb-4 flex flex-col items-center text-center animate-in zoom-in-95 relative overflow-hidden">
                                 <div className="absolute top-2 right-2 bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded flex items-center gap-1 animate-pulse">
                                     <Clock size={12}/> {formatTime(timeLeft)}
@@ -378,7 +377,7 @@ export default function Checkout() {
                         )}
 
                         {/* --- LÓGICA DO CARTÃO (NOVO) --- */}
-                        {formData.payment_method === 'card' && (
+                        {(formData.payment_method === 'card' || formData.payment_method === 'pix') && (
                              <div className="bg-blue-50 border border-blue-200 p-5 rounded-xl mb-4 text-center animate-in zoom-in-95">
                                  <h3 className="font-bold text-blue-800 mb-2 flex items-center justify-center gap-2"><CreditCard size={18}/> Pagamento Seguro</h3>
                                  <p className="text-xs text-blue-700 mb-2">
