@@ -11,12 +11,13 @@ const Switch = ({ checked, onChange }) => (
     <div className={`w-3 h-3 bg-white rounded-full shadow-md absolute top-1 transition-all duration-300 ${checked ? 'left-6' : 'left-1'}`} />
   </button>
 );
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD;
-const ADMIN_SESSION_KEY = "admin_auth";
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || "").trim().toLowerCase();
 
 export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [loginData, setLoginData] = useState({ email: "", password: "" });
 
   const [activeTab, setActiveTab] = useState("products");
   const [products, setProducts] = useState([]);
@@ -32,30 +33,64 @@ export default function Admin() {
   const [form, setForm] = useState({ name: "", description: "", price: "", category: "vestidos", size: "", quantity: "1", image: null, gallery: [], featured: false });
   const [config, setConfig] = useState({});
 
-  useEffect(() => { 
-    const isAuth = sessionStorage.getItem(ADMIN_SESSION_KEY);
-    if (isAuth) {
+  useEffect(() => {
+    let mounted = true;
+
+    const applySession = async (session) => {
+      if (!mounted) return;
+
+      const email = session?.user?.email?.toLowerCase() || "";
+      const allowed = !ADMIN_EMAIL || email === ADMIN_EMAIL;
+
+      if (session && allowed) {
         setIsAuthenticated(true);
-        loadData(); 
-        loadConfig();
-    }
+        await Promise.all([loadData(), loadConfig()]);
+      } else {
+        setIsAuthenticated(false);
+      }
+      setAuthChecking(false);
+    };
+
+    supabase.auth.getSession().then(({ data }) => applySession(data?.session));
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      await applySession(session);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (!ADMIN_PASSWORD) {
-        alert("Defina VITE_ADMIN_PASSWORD no .env");
-        return;
+    if (!loginData.email || !loginData.password) return alert("Preencha email e senha.");
+
+    setAuthLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: loginData.email.trim(),
+      password: loginData.password,
+    });
+    setAuthLoading(false);
+
+    if (error) {
+      alert("Login invalido.");
+      return;
     }
 
-    if (passwordInput === ADMIN_PASSWORD) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
-        loadData();
-        loadConfig();
-    } else {
-        alert("Senha incorreta!");
+    const sessionEmail = data?.user?.email?.toLowerCase() || "";
+    if (ADMIN_EMAIL && sessionEmail !== ADMIN_EMAIL) {
+      await supabase.auth.signOut();
+      alert("Este usuario nao tem permissao de admin.");
     }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsAuthenticated(false);
   };
 
   async function loadData() {
@@ -212,7 +247,39 @@ export default function Admin() {
     }
   };
 
-  if (!isAuthenticated) { return <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4"><form onSubmit={handleLogin} className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm border border-gray-100 text-center"><div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6"><Lock size={32} /></div><h1 className="text-2xl font-bold text-gray-800 mb-2">Acesso Restrito</h1><input type="password" placeholder="Senha" className="w-full p-4 border rounded-xl mb-4 text-center" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} /><button className="w-full bg-rose-500 text-white font-bold py-4 rounded-xl">Entrar</button></form></div>; }
+  if (authChecking) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50">Verificando sessao...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <form onSubmit={handleLogin} className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm border border-gray-100 text-center">
+          <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Lock size={32} />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Acesso Restrito</h1>
+          <input
+            type="email"
+            placeholder="Email admin"
+            className="w-full p-4 border rounded-xl mb-3"
+            value={loginData.email}
+            onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
+          />
+          <input
+            type="password"
+            placeholder="Senha"
+            className="w-full p-4 border rounded-xl mb-4"
+            value={loginData.password}
+            onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+          />
+          <button disabled={authLoading} className="w-full bg-rose-500 text-white font-bold py-4 rounded-xl disabled:opacity-70">
+            {authLoading ? "Entrando..." : "Entrar"}
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-700 pb-20 animate-in fade-in">
@@ -222,7 +289,7 @@ export default function Admin() {
           <button onClick={() => setActiveTab("products")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "products" ? "bg-rose-500 text-white" : "bg-gray-100"}`}>Produtos</button>
           <button onClick={() => setActiveTab("orders")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "orders" ? "bg-rose-500 text-white" : "bg-gray-100"}`}>Pedidos</button>
           <button onClick={() => setActiveTab("config")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "config" ? "bg-rose-500 text-white" : "bg-gray-100"}`}>Configurações</button>
-          <button onClick={() => { setIsAuthenticated(false); sessionStorage.removeItem(ADMIN_SESSION_KEY); }} className="ml-2 px-3 py-2 rounded-full border border-gray-200 text-red-500 hover:bg-red-50">Sair</button>
+          <button onClick={handleLogout} className="ml-2 px-3 py-2 rounded-full border border-gray-200 text-red-500 hover:bg-red-50">Sair</button>
         </div>
       </header>
 
