@@ -66,6 +66,8 @@ Deno.serve(async (req) => {
       currency_id: item.currency_id || "BRL",
     }));
 
+    const fallbackNotificationUrl = Deno.env.get("MP_WEBHOOK_URL");
+
     const preferenceBody = {
       items: normalizedItems,
       payer: payload.payer_email ? { email: payload.payer_email } : undefined,
@@ -76,7 +78,7 @@ Deno.serve(async (req) => {
         failure: payload.failure_url,
       },
       auto_return: "approved",
-      notification_url: payload.notification_url,
+      notification_url: payload.notification_url || fallbackNotificationUrl,
       metadata: payload.order_id ? { order_id: payload.order_id } : undefined,
     };
 

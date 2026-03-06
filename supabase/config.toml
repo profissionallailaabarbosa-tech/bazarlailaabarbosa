@@ -353,8 +353,8 @@ allow_dynamic_registration = false
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
-# `per_worker` (default) — enables hot reload during local development.
-# `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
+# `per_worker` (default) Ã¢â‚¬â€ enables hot reload during local development.
+# `oneshot` Ã¢â‚¬â€ fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
 policy = "per_worker"
 # Port to attach the Chrome inspector for debugging edge functions.
 inspector_port = 8083
@@ -393,3 +393,9 @@ entrypoint = "./functions/create-payment/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/create-payment/*.html" ]
+
+[functions.payment-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/payment-webhook/deno.json"
+entrypoint = "./functions/payment-webhook/index.ts"
