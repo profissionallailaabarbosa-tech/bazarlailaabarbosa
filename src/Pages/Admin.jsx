@@ -11,7 +11,6 @@ const Switch = ({ checked, onChange }) => (
     <div className={`w-3 h-3 bg-white rounded-full shadow-md absolute top-1 transition-all duration-300 ${checked ? 'left-6' : 'left-1'}`} />
   </button>
 );
-const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || "").trim().toLowerCase();
 
 export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -33,16 +32,26 @@ export default function Admin() {
   const [form, setForm] = useState({ name: "", description: "", price: "", category: "vestidos", size: "", quantity: "1", image: null, gallery: [], featured: false });
   const [config, setConfig] = useState({});
 
+  async function checkIsAdmin(userId) {
+    if (!userId) return false;
+    const { data, error } = await supabase
+      .from("admin_users")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return false;
+    return Boolean(data?.user_id);
+  }
+
   useEffect(() => {
     let mounted = true;
 
     const applySession = async (session) => {
       if (!mounted) return;
 
-      const email = session?.user?.email?.toLowerCase() || "";
-      const allowed = !ADMIN_EMAIL || email === ADMIN_EMAIL;
+      const isAdmin = await checkIsAdmin(session?.user?.id);
 
-      if (session && allowed) {
+      if (session && isAdmin) {
         setIsAuthenticated(true);
         await Promise.all([loadData(), loadConfig()]);
       } else {
@@ -81,8 +90,8 @@ export default function Admin() {
       return;
     }
 
-    const sessionEmail = data?.user?.email?.toLowerCase() || "";
-    if (ADMIN_EMAIL && sessionEmail !== ADMIN_EMAIL) {
+    const isAdmin = await checkIsAdmin(data?.user?.id);
+    if (!isAdmin) {
       await supabase.auth.signOut();
       alert("Este usuario nao tem permissao de admin.");
     }
