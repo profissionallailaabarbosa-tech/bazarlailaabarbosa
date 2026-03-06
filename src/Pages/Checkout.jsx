@@ -4,7 +4,7 @@ import { supabase } from "../api/supabase";
 import { buildWhatsAppLink } from "../utils/whatsapp";
 import { 
   ShoppingBag, CreditCard, Smartphone, MapPin, User, Truck, Car, 
-  Check, Edit2, Loader2, ArrowLeft, Copy, Clock, Camera, ExternalLink
+  Check, Edit2, Loader2, ArrowLeft, Copy, Clock, Camera
 } from "lucide-react";
 
 export default function Checkout() {
@@ -147,7 +147,40 @@ export default function Checkout() {
       }
 
       const msg = `*NOVO PEDIDO #${order?.id}* 🎉\n\n*Cliente:* ${formData.name}\n*Pagamento:* ${textoPagamento}\n*Entrega:* ${formData.delivery_method}\n\n*Itens:*\n${itemsList}\n\n*Total:* R$ ${total.toFixed(2)}${avisoExtra}`;
-      
+      if (formData.payment_method === "card") {
+        const origin = window.location.origin;
+        const paymentItems = cart.map((item) => ({
+          id: item.id,
+          title: item.name || "Produto",
+          quantity: Number(item.quantitySelected || item.quantity || 1),
+          unit_price: Number(item.price || 0),
+        }));
+
+        const { data: paymentData, error: paymentError } = await supabase.functions.invoke(
+          "create-payment",
+          {
+            body: {
+              order_id: order?.id,
+              external_reference: String(order?.id),
+              payer_email: formData.email || undefined,
+              items: paymentItems,
+              success_url: `${origin}/checkout?payment=success&order=${order?.id}`,
+              pending_url: `${origin}/checkout?payment=pending&order=${order?.id}`,
+              failure_url: `${origin}/checkout?payment=failure&order=${order?.id}`,
+            },
+          }
+        );
+
+        if (paymentError) throw paymentError;
+
+        const paymentUrl = paymentData?.init_point || paymentData?.sandbox_init_point;
+        if (!paymentUrl) throw new Error("Nao foi possivel gerar link de pagamento.");
+
+        localStorage.removeItem("carrinho_laila");
+        localStorage.removeItem("cart");
+        window.location.href = paymentUrl;
+        return;
+      }
       const whatsappSource = config?.whatsapp_number || config?.whatsapp;
       const whatsappUrl = buildWhatsAppLink(whatsappSource, msg);
       
@@ -348,23 +381,11 @@ export default function Checkout() {
                         {formData.payment_method === 'card' && (
                              <div className="bg-blue-50 border border-blue-200 p-5 rounded-xl mb-4 text-center animate-in zoom-in-95">
                                  <h3 className="font-bold text-blue-800 mb-2 flex items-center justify-center gap-2"><CreditCard size={18}/> Pagamento Seguro</h3>
-                                 <p className="text-xs text-blue-600 mb-4">Clique no botão abaixo para pagar com cartão:</p>
-                                 
-                                 {config?.payment_card_instructions ? (
-                                     <a 
-                                        href={config.payment_card_instructions.startsWith('http') ? config.payment_card_instructions : '#'} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200 flex items-center justify-center gap-2 mb-3 active:scale-95"
-                                     >
-                                         <ExternalLink size={18}/> Pagar com Cartão
-                                     </a>
-                                 ) : (
-                                     <p className="text-red-500 text-xs bg-red-50 p-2 rounded">Link de pagamento não configurado no Admin.</p>
-                                 )}
-                                 
-                                 <p className="text-[10px] text-gray-500 mt-2">
-                                    Após realizar o pagamento, clique em <b>"Confirmar e Enviar Pedido"</b> abaixo para me avisar.
+                                 <p className="text-xs text-blue-700 mb-2">
+                                   Ao clicar em <b>"Confirmar e Enviar Pedido"</b>, voce sera redirecionada para o checkout do Mercado Pago.
+                                 </p>
+                                 <p className="text-[10px] text-gray-500">
+                                   Seu pedido sera criado antes do redirecionamento.
                                  </p>
                              </div>
                         )}
@@ -413,3 +434,5 @@ export default function Checkout() {
     </div>
   );
 }
+
+
