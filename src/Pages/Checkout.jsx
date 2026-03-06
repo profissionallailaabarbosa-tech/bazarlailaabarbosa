@@ -100,10 +100,7 @@ export default function Checkout() {
 
   const total = subtotal + shippingPrice;
 
-  const canProceed = () => {
-    if (currentStep === 1) return formData.name && formData.phone && formData.address.cep && formData.address.street && formData.address.number;
-    return true;
-  };
+  const getPhoneDigits = (value) => (value || "").replace(/\D/g, "");
 
   const isDeliveryMethodAvailable = (method) => {
     if (method === "correios") return !!config?.enable_shipping_calc;
@@ -112,9 +109,33 @@ export default function Checkout() {
     return false;
   };
 
-  const handleFinalize = async () => {
+  const getStep1Error = () => {
+    if (!formData.name?.trim()) return "Informe o nome completo.";
+    if (getPhoneDigits(formData.phone).length < 10) return "Informe um WhatsApp valido com DDD.";
+
+    // Endereco completo sempre obrigatorio para identificacao e contato de entrega.
+    if (!formData.address.cep?.trim()) return "Informe o CEP.";
+    if (!formData.address.street?.trim()) return "Informe a rua.";
+    if (!formData.address.number?.trim()) return "Informe o numero.";
+    if (!formData.address.neighborhood?.trim()) return "Informe o bairro.";
+    if (!formData.address.city?.trim()) return "Informe a cidade.";
+    if (!formData.address.state?.trim()) return "Informe o estado (UF).";
+    return null;
+  };
+
+  const getFinalizeError = () => {
+    const step1Error = getStep1Error();
+    if (step1Error) return step1Error;
     if (!isDeliveryMethodAvailable(formData.delivery_method)) {
-      alert("Selecione uma forma de entrega antes de continuar.");
+      return "Selecione uma forma de entrega antes de continuar.";
+    }
+    return null;
+  };
+
+  const handleFinalize = async () => {
+    const finalizeError = getFinalizeError();
+    if (finalizeError) {
+      alert(finalizeError);
       return;
     }
     setLoading(true);
@@ -267,7 +288,17 @@ export default function Checkout() {
                         </div>
 
                         <div className="mt-6 flex justify-end">
-                            <button onClick={() => canProceed() ? setCurrentStep(2) : alert("Preencha os campos obrigatórios")} className="bg-rose-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-200">
+                            <button
+                              onClick={() => {
+                                const step1Error = getStep1Error();
+                                if (step1Error) {
+                                  alert(step1Error);
+                                  return;
+                                }
+                                setCurrentStep(2);
+                              }}
+                              className="bg-rose-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-200"
+                            >
                                 Continuar para Entrega
                             </button>
                         </div>
@@ -413,6 +444,7 @@ export default function Checkout() {
                         
                         <div className="space-y-2 text-sm text-gray-600 mt-4 border-t pt-4">
                             <p><b>Nome:</b> {formData.name}</p>
+                            <p><b>WhatsApp:</b> {formData.phone}</p>
                             <p><b>Endereço:</b> {formData.address.street}, {formData.address.number}</p>
                             <p className="capitalize"><b>Envio:</b> {formData.delivery_method.replace('_', ' ')}</p>
                         </div>
