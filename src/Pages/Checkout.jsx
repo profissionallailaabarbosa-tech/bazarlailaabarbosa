@@ -19,6 +19,7 @@ export default function Checkout() {
   const [timeLeft, setTimeLeft] = useState(900); 
 
   const [currentStep, setCurrentStep] = useState(1);
+  const [mpReturnHandled, setMpReturnHandled] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -61,6 +62,30 @@ export default function Checkout() {
         loadSettings();
     } catch (e) { console.error("Erro ao carregar", e); }
   }, []);
+
+  useEffect(() => {
+    if (!config || mpReturnHandled) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const orderId = params.get("order");
+
+    if (!payment || !orderId) return;
+
+    const whatsappSource = config?.whatsapp_number || config?.whatsapp;
+    if (!whatsappSource) return;
+
+    let statusMsg = "voltei do pagamento";
+    if (payment === "success") statusMsg = "pagamento aprovado";
+    if (payment === "pending") statusMsg = "pagamento pendente";
+    if (payment === "failure") statusMsg = "pagamento nao aprovado";
+
+    const msg = `Oi! Pedido #${orderId}. ${statusMsg}.`;
+    const whatsappUrl = buildWhatsAppLink(whatsappSource, msg);
+
+    setMpReturnHandled(true);
+    window.location.href = whatsappUrl;
+  }, [config, mpReturnHandled]);
 
   const searchCEP = async (cep) => {
     const cleanCEP = cep.replace(/\D/g, "");
