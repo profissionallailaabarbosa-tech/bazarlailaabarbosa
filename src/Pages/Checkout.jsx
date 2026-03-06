@@ -117,29 +117,19 @@ export default function Checkout() {
       if (formData.payment_method === 'pix' && pixPaid) statusPagamentoBanco = 'Pago (Verificar)';
       if (formData.payment_method === 'card') statusPagamentoBanco = 'Aguardando Cartão';
 
-      const { data: order, error } = await supabase.from('orders').insert([{
-        customer_name: formData.name,
-        customer_phone: formData.phone,
-        address: addressFull,
-        total_amount: total,
-        payment_method: formData.payment_method,
-        delivery_method: formData.delivery_method,
-        status: statusPagamentoBanco,
-        items: cart
-      }]).select().single();
+      const { data: order, error } = await supabase.rpc("create_order_with_stock", {
+        p_customer_name: formData.name,
+        p_customer_phone: formData.phone,
+        p_address: addressFull,
+        p_total_amount: total,
+        p_payment_method: formData.payment_method,
+        p_delivery_method: formData.delivery_method,
+        p_status: statusPagamentoBanco,
+        p_items: cart,
+      });
 
       if (error) throw error;
 
-      // Baixa no Estoque
-      for (const item of cart) {
-         const qtdComprada = item.quantitySelected || 1;
-         const { data: prodData } = await supabase.from('products').select('quantity').eq('id', item.id).single();
-         if (prodData) {
-             const estoqueAtual = parseInt(prodData.quantity) || 0;
-             const novoEstoque = Math.max(0, estoqueAtual - qtdComprada); 
-             await supabase.from('products').update({ quantity: novoEstoque }).eq('id', item.id);
-         }
-      }
 
       const itemsList = cart.map(i => `• ${i.quantitySelected || 1}x ${i.name}`).join('\n');
       
@@ -156,7 +146,7 @@ export default function Checkout() {
           avisoExtra = "\n💳 *Fiz o pagamento pelo link do cartão!*";
       }
 
-      const msg = `*NOVO PEDIDO #${order.id}* 🎉\n\n*Cliente:* ${formData.name}\n*Pagamento:* ${textoPagamento}\n*Entrega:* ${formData.delivery_method}\n\n*Itens:*\n${itemsList}\n\n*Total:* R$ ${total.toFixed(2)}${avisoExtra}`;
+      const msg = `*NOVO PEDIDO #${order?.id}* 🎉\n\n*Cliente:* ${formData.name}\n*Pagamento:* ${textoPagamento}\n*Entrega:* ${formData.delivery_method}\n\n*Itens:*\n${itemsList}\n\n*Total:* R$ ${total.toFixed(2)}${avisoExtra}`;
       
       const whatsappSource = config?.whatsapp_number || config?.whatsapp;
       const whatsappUrl = buildWhatsAppLink(whatsappSource, msg);
@@ -167,7 +157,7 @@ export default function Checkout() {
 
     } catch (err) {
       console.error(err);
-      alert("Erro ao processar pedido. Tente novamente.");
+      alert(err?.message || "Erro ao processar pedido. Tente novamente.");
       setLoading(false);
     }
   };
