@@ -107,7 +107,7 @@ export default function Cart() {
             { type: 'SEDEX', price: sedexPrice, days: sedexDays }
         ]);
 
-    } catch (error) {
+    } catch {
         alert("Erro ao buscar CEP. Tente novamente.");
     } finally {
         setLoadingCep(false);

@@ -21,6 +21,8 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState("products");
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderFilter, setOrderFilter] = useState("all");
   const [loading, setLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -232,13 +234,54 @@ export default function Admin() {
   };
 
   const handleDeleteProduct = async (id) => { if (confirm("Apagar?")) { await db.products.delete(id); loadData(); }};
-  const updateOrderStatus = async (id, newStatus) => { try { if (newStatus === 'Entregue') { if(confirm("Marcar Entregue e remover?")) { await supabase.from('orders').delete().eq('id', id); loadData(); } } else { await supabase.from('orders').update({ status: newStatus }).eq('id', id); loadData(); } } catch (e) { alert("Erro ao atualizar"); } };
+  const updateOrderStatus = async (id, newStatus) => {
+    try {
+      await supabase.from('orders').update({ status: newStatus }).eq('id', id);
+      loadData();
+    } catch {
+      alert("Erro ao atualizar");
+    }
+  };
+
+  const normalizeOrderValue = (value) => String(value || "").toLowerCase();
+
+  const getPaymentBadgeClass = (paymentStatus) => {
+    const normalized = normalizeOrderValue(paymentStatus);
+    if (normalized === "approved") return "bg-green-100 text-green-700";
+    if (["rejected", "cancelled", "charged_back"].includes(normalized)) return "bg-red-100 text-red-700";
+    return "bg-yellow-100 text-yellow-700";
+  };
+
+  const getStatusBadgeClass = (status) => {
+    const normalized = normalizeOrderValue(status);
+    if (normalized === "pago" || normalized === "entregue") return "bg-green-100 text-green-700";
+    if (normalized === "enviado") return "bg-blue-100 text-blue-700";
+    if (normalized.includes("recusado")) return "bg-red-100 text-red-700";
+    return "bg-gray-100 text-gray-700";
+  };
+
+  const filteredOrders = orders.filter((order) => {
+    const search = normalizeOrderValue(orderSearch);
+    const matchesSearch =
+      !search ||
+      normalizeOrderValue(order.id).includes(search) ||
+      normalizeOrderValue(order.customer_name).includes(search) ||
+      normalizeOrderValue(order.customer_phone).includes(search);
+
+    if (!matchesSearch) return false;
+    if (orderFilter === "all") return true;
+    if (orderFilter === "paid") return normalizeOrderValue(order.payment_status) === "approved";
+    if (orderFilter === "pending") return normalizeOrderValue(order.payment_status) !== "approved";
+    if (orderFilter === "sent") return normalizeOrderValue(order.status) === "enviado";
+    if (orderFilter === "delivered") return normalizeOrderValue(order.status) === "entregue";
+    return true;
+  });
   
   // --- SALVAR CONFIGURAÇÕES ---
   const handleSaveConfig = async () => {
     try {
       setSavingConfig(true);
-      const { id, ...configData } = config;
+      const { id: _configId, ...configData } = config;
       const whatsappNumber = configData.whatsapp_number || configData.whatsapp || "";
       const payload = {
         ...configData,
@@ -369,13 +412,107 @@ export default function Admin() {
         
         {activeTab === "orders" && (
             <div className="space-y-4">
-               {orders.length === 0 ? <div className="bg-white p-8 rounded text-center text-gray-400">Sem pedidos.</div> : orders.map(order => (
-                    <div key={order.id} className="bg-white p-4 rounded border border-gray-100 flex justify-between">
-                        <div><h3 className="font-bold text-sm">#{order.id} - {order.customer_name}</h3><span className="text-xs bg-gray-100 px-2 rounded">{order.status}</span></div>
-                        <div className="text-right"><p className="font-bold text-rose-500 text-sm">R$ {order.total_amount}</p>
-                        <div className="flex gap-1 mt-1"><button onClick={() => updateOrderStatus(order.id, 'Enviado')} className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded">Enviado</button><button onClick={() => updateOrderStatus(order.id, 'Entregue')} className="text-[10px] bg-green-50 text-green-600 px-2 py-1 rounded">Entregue</button></div></div>
+              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-3">
+                <input
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                  placeholder="Buscar por pedido, nome ou WhatsApp"
+                  className="flex-1 p-3 rounded-lg border border-gray-200 text-sm"
+                />
+                <select
+                  value={orderFilter}
+                  onChange={(e) => setOrderFilter(e.target.value)}
+                  className="p-3 rounded-lg border border-gray-200 text-sm md:w-56"
+                >
+                  <option value="all">Todos</option>
+                  <option value="pending">Pagamento pendente</option>
+                  <option value="paid">Pagamento aprovado</option>
+                  <option value="sent">Enviados</option>
+                  <option value="delivered">Entregues</option>
+                </select>
+              </div>
+
+              {filteredOrders.length === 0 ? (
+                <div className="bg-white p-8 rounded text-center text-gray-400">Nenhum pedido encontrado.</div>
+              ) : (
+                filteredOrders.map((order) => (
+                  <div key={order.id} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm space-y-4">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-bold text-base text-gray-800">Pedido #{order.id}</h3>
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${getStatusBadgeClass(order.status)}`}>
+                            {order.status || "Sem status"}
+                          </span>
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${getPaymentBadgeClass(order.payment_status)}`}>
+                            {order.payment_status || "Sem pagamento"}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700 font-medium">{order.customer_name || "Cliente sem nome"}</p>
+                        <div className="text-sm text-gray-500 space-y-1">
+                          <p>WhatsApp: {order.customer_phone || "Nao informado"}</p>
+                          <p>Entrega: {String(order.delivery_method || "Nao informado").replace("_", " ")}</p>
+                          <p>Pagamento: {order.payment_method || "Nao informado"}</p>
+                          <p>Criado em: {order.created_at ? new Date(order.created_at).toLocaleString("pt-BR") : "Sem data"}</p>
+                        </div>
+                      </div>
+
+                      <div className="md:text-right space-y-2">
+                        <p className="font-bold text-rose-500 text-lg">R$ {Number(order.total_amount || 0).toFixed(2)}</p>
+                        <div className="flex flex-wrap gap-2 md:justify-end">
+                          <button
+                            onClick={() => updateOrderStatus(order.id, 'Aguardando Separacao')}
+                            className="text-xs bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200"
+                          >
+                            Separar
+                          </button>
+                          <button
+                            onClick={() => updateOrderStatus(order.id, 'Enviado')}
+                            className="text-xs bg-blue-50 text-blue-600 px-3 py-2 rounded-lg hover:bg-blue-100"
+                          >
+                            Enviado
+                          </button>
+                          <button
+                            onClick={() => updateOrderStatus(order.id, 'Entregue')}
+                            className="text-xs bg-green-50 text-green-600 px-3 py-2 rounded-lg hover:bg-green-100"
+                          >
+                            Entregue
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                ))}
+
+                    <div className="grid lg:grid-cols-2 gap-4">
+                      <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                        <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Endereco</h4>
+                        <p className="text-sm text-gray-700 whitespace-pre-line">
+                          {order.address || "Endereco nao informado"}
+                        </p>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                        <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Itens</h4>
+                        <div className="space-y-2">
+                          {(order.items || []).map((item, idx) => (
+                            <div key={`${order.id}-${idx}`} className="flex items-center justify-between gap-3 text-sm">
+                              <div>
+                                <p className="font-medium text-gray-800">{item.name || "Produto"}</p>
+                                <p className="text-xs text-gray-500">
+                                  Qtd: {item.quantitySelected || item.quantity || 1}
+                                  {item.size ? ` | Tam: ${item.size}` : ""}
+                                </p>
+                              </div>
+                              <span className="font-bold text-gray-700">
+                                R$ {Number(item.price || 0).toFixed(2)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
         )}
 

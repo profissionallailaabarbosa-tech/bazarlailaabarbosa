@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Search, Filter, ShoppingBag } from "lucide-react";
+import { Search } from "lucide-react";
 import { supabase } from "../api/supabase"; 
-import { useNavigate } from "react-router-dom"; 
+import ProductCard from "../components/ProductCard";
 
 export default function Home() {
-  const navigate = useNavigate(); 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -25,36 +24,61 @@ export default function Home() {
   ];
 
   useEffect(() => {
+    let active = true;
+
     async function loadData() {
       try {
-        // PRODUTOS
         const { data: productsData, error: productsError } = await supabase
           .from("products")
-          .select("*");
+          .select("*")
+          .order("id", { ascending: false });
 
         if (productsError) {
           console.error("Erro ao buscar produtos:", productsError);
-        } else {
+        } else if (active) {
           setProducts(productsData || []);
         }
 
-        // BANNER
         const { data: config } = await supabase
           .from("settings")
           .select("banner_image_url")
           .single();
 
-        if (config && config.banner_image_url) {
+        if (active && config && config.banner_image_url) {
           setBannerImage(config.banner_image_url);
         }
       } catch (error) {
         console.error("Erro geral:", error);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
 
     loadData();
+
+    const productsChannel = supabase
+      .channel("home-products")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "products" },
+        () => loadData()
+      )
+      .subscribe();
+
+    const settingsChannel = supabase
+      .channel("home-settings")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "settings" },
+        () => loadData()
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(productsChannel);
+      supabase.removeChannel(settingsChannel);
+    };
   }, []);
 
   const filteredProducts = products.filter((p) => {
@@ -67,10 +91,6 @@ export default function Home() {
       (p.name && p.name.toLowerCase().includes(searchQuery.toLowerCase()));
     return categoryMatch && searchMatch;
   });
-
-  const handleBuy = (product) => {
-    navigate(`/produto/${product.id}`);
-  };
 
   const scrollToProducts = () => {
     const element = document.getElementById("products-section");
@@ -166,31 +186,7 @@ export default function Home() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {filteredProducts.map((product) => {
-              const isEsgotado =
-                !product.quantity || product.quantity <= 0;
-
-              return (
-                <div
-                  key={product.id}
-                  onClick={() => handleBuy(product)}
-                  className="bg-white rounded-xl border cursor-pointer"
-                >
-                  <div className="aspect-[3/4] bg-gray-100">
-                    {product.image && (
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-                  </div>
-
-                  <div className="p-4">
-                    <h3 className="font-bold">{product.name}</h3>
-                    <span>R$ {product.price}</span>
-                  </div>
-                </div>
-              );
+              return <ProductCard key={product.id} product={product} />;
             })}
           </div>
         )}

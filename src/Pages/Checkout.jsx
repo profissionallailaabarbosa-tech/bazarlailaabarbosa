@@ -11,6 +11,7 @@ export default function Checkout() {
   const navigate = useNavigate();
   const [cart, setCart] = useState([]);
   const [config, setConfig] = useState(null);
+  const [cartShippingQuote, setCartShippingQuote] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isLoadingCEP, setIsLoadingCEP] = useState(false);
   const [pixPaid, setPixPaid] = useState(false);
@@ -20,6 +21,7 @@ export default function Checkout() {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [mpReturnHandled, setMpReturnHandled] = useState(false);
+  const [mpReturnState, setMpReturnState] = useState(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -52,8 +54,36 @@ export default function Checkout() {
 
   useEffect(() => {
     try {
-        const savedCart = localStorage.getItem("carrinho_laila") || localStorage.getItem("cart");
+        const checkoutDataRaw = localStorage.getItem("checkout_data");
+        const checkoutData = checkoutDataRaw ? JSON.parse(checkoutDataRaw) : null;
+        const savedCart = checkoutData?.items
+          ? JSON.stringify(checkoutData.items)
+          : (localStorage.getItem("carrinho_laila") || localStorage.getItem("cart"));
         if (savedCart) setCart(JSON.parse(savedCart));
+
+        if (checkoutData?.shipping && checkoutData?.address?.cep) {
+          setCartShippingQuote({
+            ...checkoutData.shipping,
+            cep: String(checkoutData.address.cep).replace(/\D/g, ""),
+          });
+        }
+
+        if (checkoutData?.address) {
+          setFormData((prev) => ({
+            ...prev,
+            address: {
+              ...prev.address,
+              cep: checkoutData.address.cep || "",
+              street: checkoutData.address.logradouro || checkoutData.address.street || "",
+              number: checkoutData.address.number || "",
+              complement: checkoutData.address.complemento || checkoutData.address.complement || "",
+              neighborhood: checkoutData.address.bairro || checkoutData.address.neighborhood || "",
+              city: checkoutData.address.localidade || checkoutData.address.city || "",
+              state: checkoutData.address.uf || checkoutData.address.state || "",
+            },
+            delivery_method: checkoutData.shipping ? "correios" : prev.delivery_method,
+          }));
+        }
         
         async function loadSettings() {
           const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
@@ -75,22 +105,141 @@ export default function Checkout() {
     const whatsappSource = config?.whatsapp_number || config?.whatsapp;
     if (!whatsappSource) return;
 
-    let statusMsg = "voltei do pagamento";
-    if (payment === "success") statusMsg = "pagamento aprovado";
-    if (payment === "pending") statusMsg = "pagamento pendente";
-    if (payment === "failure") statusMsg = "pagamento nao aprovado";
+    let cancelled = false;
 
-    const msg = `Oi! Pedido #${orderId}. ${statusMsg}.`;
-    const whatsappUrl = buildWhatsAppLink(whatsappSource, msg);
+    const fetchOrder = async () => {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("id, customer_name, delivery_method, status, payment_status")
+        .eq("id", orderId)
+        .maybeSingle();
 
-    setMpReturnHandled(true);
-    window.location.href = whatsappUrl;
+      if (error) throw error;
+      return data;
+    };
+
+    const isApproved = (orderData) =>
+      String(orderData?.payment_status || "").toLowerCase() === "approved" ||
+      String(orderData?.status || "").toLowerCase() === "pago";
+
+    const isRejected = (orderData) =>
+      ["rejected", "cancelled", "charged_back"].includes(
+        String(orderData?.payment_status || "").toLowerCase()
+      );
+
+    const redirectToWhatsApp = (orderData, statusMsg) => {
+      if (cancelled) return;
+
+      const customerName = orderData?.customer_name ? ` Cliente: ${orderData.customer_name}.` : "";
+      const deliveryMethod = orderData?.delivery_method
+        ? ` Entrega: ${String(orderData.delivery_method).replace("_", " ")}.`
+        : "";
+      const msg = `Oi! Pedido #${orderId}. ${statusMsg}.${customerName}${deliveryMethod}`;
+      const whatsappUrl = buildWhatsAppLink(whatsappSource, msg);
+
+      setMpReturnHandled(true);
+      window.location.href = whatsappUrl;
+    };
+
+    const syncPaymentReturn = async () => {
+      setMpReturnState({
+        orderId,
+        stage: "checking",
+        message: "Estamos confirmando seu pagamento. Isso pode levar alguns segundos no PIX.",
+      });
+
+      if (payment === "failure") {
+        const orderData = await fetchOrder().catch(() => null);
+        redirectToWhatsApp(orderData, "pagamento nao aprovado");
+        return;
+      }
+
+      const maxAttempts = payment === "pending" ? 12 : 8;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const orderData = await fetchOrder().catch(() => null);
+        if (cancelled) return;
+
+        if (isApproved(orderData)) {
+          setMpReturnState({
+            orderId,
+            stage: "approved",
+            message: "Pagamento confirmado. Estamos te levando para o WhatsApp.",
+          });
+          redirectToWhatsApp(orderData, "pagamento aprovado");
+          return;
+        }
+
+        if (isRejected(orderData)) {
+          redirectToWhatsApp(orderData, "pagamento nao aprovado");
+          return;
+        }
+
+        setMpReturnState({
+          orderId,
+          stage: "checking",
+          message:
+            attempt >= 3
+              ? "Seu pedido chegou. Estamos aguardando a confirmacao final do pagamento."
+              : "Estamos confirmando seu pagamento. Isso pode levar alguns segundos no PIX.",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+      }
+
+      const orderData = await fetchOrder().catch(() => null);
+      if (cancelled) return;
+
+      if (isApproved(orderData)) {
+        setMpReturnState({
+          orderId,
+          stage: "approved",
+          message: "Pagamento confirmado. Estamos te levando para o WhatsApp.",
+        });
+        redirectToWhatsApp(orderData, "pagamento aprovado");
+        return;
+      }
+
+      setMpReturnState({
+        orderId,
+        stage: "pending",
+        message:
+          "Seu pedido foi recebido. O PIX ainda esta sincronizando. Aguarde alguns segundos e toque abaixo para continuar.",
+        continueUrl: buildWhatsAppLink(
+          whatsappSource,
+          `Oi! Pedido #${orderId}. Estou aguardando a confirmacao do pagamento.`
+        ),
+      });
+    };
+
+    syncPaymentReturn();
+
+    return () => {
+      cancelled = true;
+    };
   }, [config, mpReturnHandled]);
+
+  useEffect(() => {
+    if (!config) return;
+
+    const paymentMethods = [];
+    if (config.enable_pix) paymentMethods.push("pix");
+    if (config.enable_credit_card) paymentMethods.push("card");
+
+    setFormData((prev) => {
+      if (paymentMethods.length === 0) return prev;
+      if (paymentMethods.includes(prev.payment_method)) return prev;
+      return { ...prev, payment_method: paymentMethods[0] };
+    });
+
+    setPixPaid((prev) => (paymentMethods.includes("pix") ? prev : false));
+  }, [config]);
 
   const searchCEP = async (cep) => {
     const cleanCEP = cep.replace(/\D/g, "");
     if (cleanCEP.length !== 8) return;
     setIsLoadingCEP(true);
+    setCartShippingQuote((prev) => (prev?.cep === cleanCEP ? prev : null));
     try {
       const response = await fetch(`https://viacep.com.br/ws/${cleanCEP}/json/`);
       const data = await response.json();
@@ -112,20 +261,27 @@ export default function Checkout() {
   };
 
   const subtotal = cart.reduce((acc, item) => acc + (parseFloat(item.price) * (item.quantitySelected || item.quantity || 1)), 0);
+
+  const currentCepDigits = (formData.address.cep || "").replace(/\D/g, "");
   
   const shippingPrice = useMemo(() => {
     if (formData.delivery_method !== 'correios' || !config?.enable_shipping_calc) return 0;
+    if (cartShippingQuote && cartShippingQuote.cep === currentCepDigits) {
+      return parseFloat(cartShippingQuote.price) || 0;
+    }
     if (config.shipping_origin_cep && formData.address.cep) {
         const originPrefix = config.shipping_origin_cep.substring(0, 1);
         const destPrefix = formData.address.cep.substring(0, 1);
         return originPrefix === destPrefix ? (parseFloat(config.shipping_local_price) || 20) : (parseFloat(config.shipping_national_price) || 40);
     }
     return parseFloat(config.shipping_national_price) || 40;
-  }, [formData.delivery_method, formData.address.cep, config]);
+  }, [formData.delivery_method, formData.address.cep, config, cartShippingQuote, currentCepDigits]);
 
   const total = subtotal + shippingPrice;
 
   const getPhoneDigits = (value) => (value || "").replace(/\D/g, "");
+  const requiresAddress = formData.delivery_method !== "retirada";
+  const showLegacyPixBlock = false;
 
   const isDeliveryMethodAvailable = (method) => {
     if (method === "correios") return !!config?.enable_shipping_calc;
@@ -134,11 +290,20 @@ export default function Checkout() {
     return false;
   };
 
-  const getStep1Error = () => {
+  const isPaymentMethodAvailable = (method) => {
+    if (method === "pix") return !!config?.enable_pix;
+    if (method === "card") return !!config?.enable_credit_card;
+    return false;
+  };
+
+  const getCustomerError = () => {
     if (!formData.name?.trim()) return "Informe o nome completo.";
     if (getPhoneDigits(formData.phone).length < 10) return "Informe um WhatsApp valido com DDD.";
+    return null;
+  };
 
-    // Endereco completo sempre obrigatorio para identificacao e contato de entrega.
+  const getAddressError = () => {
+    if (!requiresAddress) return null;
     if (!formData.address.cep?.trim()) return "Informe o CEP.";
     if (!formData.address.street?.trim()) return "Informe a rua.";
     if (!formData.address.number?.trim()) return "Informe o numero.";
@@ -148,9 +313,23 @@ export default function Checkout() {
     return null;
   };
 
+  const getStep1Error = () => getCustomerError();
+
+  const getStep2Error = () => {
+    const customerError = getCustomerError();
+    if (customerError) return customerError;
+    if (!isDeliveryMethodAvailable(formData.delivery_method)) {
+      return "Selecione uma forma de entrega para continuar.";
+    }
+    return getAddressError();
+  };
+
   const getFinalizeError = () => {
-    const step1Error = getStep1Error();
-    if (step1Error) return step1Error;
+    const step2Error = getStep2Error();
+    if (step2Error) return step2Error;
+    if (!isPaymentMethodAvailable(formData.payment_method)) {
+      return "Selecione uma forma de pagamento disponivel antes de continuar.";
+    }
     if (!isDeliveryMethodAvailable(formData.delivery_method)) {
       return "Selecione uma forma de entrega antes de continuar.";
     }
@@ -212,28 +391,42 @@ export default function Checkout() {
           unit_price: Number(item.price || 0),
         }));
 
-        const { data: paymentData, error: paymentError } = await supabase.functions.invoke(
-          "create-payment",
-          {
-            body: {
-              order_id: order?.id,
-              external_reference: String(order?.id),
-              payer_email: formData.email || undefined,
-              items: paymentItems,
-              success_url: `${origin}/checkout?payment=success&order=${order?.id}`,
-              pending_url: `${origin}/checkout?payment=pending&order=${order?.id}`,
-              failure_url: `${origin}/checkout?payment=failure&order=${order?.id}`,
-            },
-          }
-        );
+        let paymentData;
+        try {
+          const { data, error: paymentError } = await supabase.functions.invoke(
+            "create-payment",
+            {
+              body: {
+                order_id: order?.id,
+                external_reference: String(order?.id),
+                payer_email: formData.email || undefined,
+                items: paymentItems,
+                success_url: `${origin}/checkout?payment=success&order=${order?.id}`,
+                pending_url: `${origin}/checkout?payment=pending&order=${order?.id}`,
+                failure_url: `${origin}/checkout?payment=failure&order=${order?.id}`,
+              },
+            }
+          );
 
-        if (paymentError) throw paymentError;
+          if (paymentError) throw paymentError;
+          paymentData = data;
+        } catch (paymentErr) {
+          await supabase
+            .from("orders")
+            .update({
+              status: "Falha ao iniciar pagamento",
+              payment_status: "payment_link_error",
+            })
+            .eq("id", order?.id);
+          throw paymentErr;
+        }
 
         const paymentUrl = paymentData?.init_point || paymentData?.sandbox_init_point;
         if (!paymentUrl) throw new Error("Nao foi possivel gerar link de pagamento.");
 
         localStorage.removeItem("carrinho_laila");
         localStorage.removeItem("cart");
+        localStorage.removeItem("checkout_data");
         window.location.href = paymentUrl;
         return;
       }
@@ -242,6 +435,7 @@ export default function Checkout() {
       
       localStorage.removeItem("carrinho_laila");
       localStorage.removeItem("cart");
+      localStorage.removeItem("checkout_data");
       window.location.href = whatsappUrl;
 
     } catch (err) {
@@ -250,6 +444,44 @@ export default function Checkout() {
       setLoading(false);
     }
   };
+
+  if (mpReturnState) return (
+    <div className="min-h-screen bg-rose-50/30 py-8 px-4 font-sans text-gray-700">
+      <div className="max-w-xl mx-auto">
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 text-center">
+          <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${
+            mpReturnState.stage === "approved" ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
+          }`}>
+            {mpReturnState.stage === "approved" ? <Check size={30} /> : <Loader2 className="animate-spin" size={30} />}
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">
+            Pedido #{mpReturnState.orderId}
+          </h1>
+          <p className="text-sm text-gray-500 mb-6">{mpReturnState.message}</p>
+
+          {mpReturnState.stage === "pending" && (
+            <div className="space-y-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition"
+              >
+                Verificar novamente
+              </button>
+              <button
+                onClick={() => {
+                  setMpReturnHandled(true);
+                  window.location.href = mpReturnState.continueUrl;
+                }}
+                className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition"
+              >
+                Ir para o WhatsApp
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   if (cart.length === 0) return (
     <div className="h-screen flex flex-col items-center justify-center bg-gray-50">
@@ -380,8 +612,9 @@ export default function Checkout() {
                             <button onClick={() => setCurrentStep(1)} className="flex-1 border border-gray-300 text-gray-600 px-4 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar</button>
                             <button
                               onClick={() => {
-                                if (!isDeliveryMethodAvailable(formData.delivery_method)) {
-                                  alert("Selecione uma forma de entrega para continuar.");
+                                const step2Error = getStep2Error();
+                                if (step2Error) {
+                                  alert(step2Error);
                                   return;
                                 }
                                 setCurrentStep(3);
@@ -418,7 +651,18 @@ export default function Checkout() {
 
                         <div className="mt-6 flex gap-3">
                             <button onClick={() => setCurrentStep(2)} className="flex-1 border border-gray-300 text-gray-600 px-4 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar</button>
-                            <button onClick={() => setCurrentStep(4)} className="flex-1 bg-rose-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-200">Revisar Pedido</button>
+                            <button
+                              onClick={() => {
+                                if (!isPaymentMethodAvailable(formData.payment_method)) {
+                                  alert("Selecione uma forma de pagamento disponivel para continuar.");
+                                  return;
+                                }
+                                setCurrentStep(4);
+                              }}
+                              className="flex-1 bg-rose-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-200"
+                            >
+                              Revisar Pedido
+                            </button>
                         </div>
                     </div>
                 )}
@@ -429,7 +673,7 @@ export default function Checkout() {
                         <h2 className="font-bold text-lg mb-4 text-gray-800 border-b pb-2">Resumo Geral</h2>
                         
                         {/* --- LÓGICA DO PIX --- */}
-                        {false && (
+                        {showLegacyPixBlock && (
                             <div className="bg-green-50 border border-green-200 p-4 rounded-xl mb-4 flex flex-col items-center text-center animate-in zoom-in-95 relative overflow-hidden">
                                 <div className="absolute top-2 right-2 bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded flex items-center gap-1 animate-pulse">
                                     <Clock size={12}/> {formatTime(timeLeft)}

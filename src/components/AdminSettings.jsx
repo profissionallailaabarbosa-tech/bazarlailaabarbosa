@@ -4,6 +4,31 @@ import {
 } from "lucide-react";
 import { supabase } from "../api/supabase";
 
+function Toggle({ label, checked, onChange, icon: Icon }) {
+  return (
+    <div className="flex items-center justify-between p-4 border rounded-xl hover:bg-gray-50 transition-colors">
+      <div className="flex items-center gap-3">
+        <div className={`p-2 rounded-lg ${checked ? "bg-rose-100 text-rose-600" : "bg-gray-100 text-gray-400"}`}>
+          {Icon && <Icon className="w-5 h-5" />}
+        </div>
+        <span className="font-medium text-gray-700">{label}</span>
+      </div>
+      <button
+        onClick={() => onChange(!checked)}
+        className={`w-12 h-6 rounded-full p-1 transition-colors ${
+          checked ? "bg-green-500" : "bg-gray-300"
+        }`}
+      >
+        <div
+          className={`w-4 h-4 bg-white rounded-full shadow-md transition-transform ${
+            checked ? "translate-x-6" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 export default function AdminSettings() {
   const [loading, setLoading] = useState(true);
 
@@ -67,30 +92,6 @@ export default function AdminSettings() {
       setSettings({ ...settings, banner: reader.result });
     reader.readAsDataURL(file);
   };
-
-  /* ===================== TOGGLE ===================== */
-  const Toggle = ({ label, checked, onChange, icon: Icon }) => (
-    <div className="flex items-center justify-between p-4 border rounded-xl hover:bg-gray-50 transition-colors">
-      <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${checked ? "bg-rose-100 text-rose-600" : "bg-gray-100 text-gray-400"}`}>
-          {Icon && <Icon className="w-5 h-5" />}
-        </div>
-        <span className="font-medium text-gray-700">{label}</span>
-      </div>
-      <button
-        onClick={() => onChange(!checked)}
-        className={`w-12 h-6 rounded-full p-1 transition-colors ${
-          checked ? "bg-green-500" : "bg-gray-300"
-        }`}
-      >
-        <div
-          className={`w-4 h-4 bg-white rounded-full shadow-md transition-transform ${
-            checked ? "translate-x-6" : "translate-x-0"
-          }`}
-        />
-      </button>
-    </div>
-  );
 
   if (loading) {
     return <div className="p-8 text-center">Carregando...</div>;
