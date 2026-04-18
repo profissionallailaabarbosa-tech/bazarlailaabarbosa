@@ -17,8 +17,6 @@ export default function Admin() {
   const PENDING_EXPIRATION_HOURS = 2;
   const MAX_STORY_VIDEO_COUNT = 3;
   const MAX_RECORDING_SECONDS = 15;
-  const MAX_STORY_VIDEO_SIZE_MB = 10;
-  const MAX_STORY_VIDEO_SIZE_BYTES = MAX_STORY_VIDEO_SIZE_MB * 1024 * 1024;
   const ACCEPTED_STORY_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
   const categoryLabels = {
     vestidos: "Vestidos",
@@ -50,7 +48,6 @@ export default function Admin() {
   const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingPreviewUrl, setRecordingPreviewUrl] = useState("");
-  const [recordingPreviewTooLarge, setRecordingPreviewTooLarge] = useState(false);
 
   // Estados de Upload
   const [imageFile, setImageFile] = useState(null); // Capa
@@ -322,7 +319,6 @@ export default function Admin() {
     setRecordingSeconds(0);
     setRecordingError("");
     setIsFinalizingRecording(false);
-    setRecordingPreviewTooLarge(false);
     setRecordingStoryIndex(null);
   };
 
@@ -336,7 +332,6 @@ export default function Admin() {
       setRecordingPreviewUrl("");
       setRecordingSeconds(0);
       setIsFinalizingRecording(false);
-      setRecordingPreviewTooLarge(false);
       setRecordingStoryIndex(index);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -367,7 +362,6 @@ export default function Admin() {
     setRecordingSeconds(0);
     setRecordingPreviewUrl("");
     setIsFinalizingRecording(false);
-    setRecordingPreviewTooLarge(false);
 
     recorder.ondataavailable = (event) => {
       if (event.data?.size) recordingChunksRef.current.push(event.data);
@@ -385,13 +379,8 @@ export default function Admin() {
       const recordedFile = new File([blob], `story-${Date.now()}.${extension}`, { type: blob.type || "video/webm" });
       const previewUrl = URL.createObjectURL(recordedFile);
       setRecordingPreviewUrl(previewUrl);
-      const isTooLarge = blob.size > MAX_STORY_VIDEO_SIZE_BYTES;
-      setRecordingPreviewTooLarge(isTooLarge);
       setIsRecording(false);
       releaseCameraTracks();
-      if (isTooLarge) {
-        setRecordingError(`A gravação passou de ${MAX_STORY_VIDEO_SIZE_MB} MB. Você pode revisar, mas vai precisar gravar outro ou encurtar para salvar.`);
-      }
       if (recordingTimerRef.current) {
         window.clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
@@ -462,7 +451,7 @@ export default function Admin() {
   };
 
   const useRecordedStory = () => {
-    if (!recordingPreviewUrl || recordingStoryIndex === null || recordingPreviewTooLarge) return;
+    if (!recordingPreviewUrl || recordingStoryIndex === null) return;
     fetch(recordingPreviewUrl)
       .then((response) => response.blob())
       .then((blob) => {
@@ -474,8 +463,7 @@ export default function Admin() {
         setRecordingSeconds(0);
         setRecordingError("");
         setIsFinalizingRecording(false);
-        setRecordingPreviewTooLarge(false);
-        stopCameraStream();
+      stopCameraStream();
       })
       .catch((error) => {
         console.error(error);
@@ -492,7 +480,6 @@ export default function Admin() {
     setRecordingSeconds(0);
     setRecordingError("");
     setIsFinalizingRecording(false);
-    setRecordingPreviewTooLarge(false);
     await startRecorder(recordingStoryIndex);
   };
 
@@ -530,10 +517,6 @@ export default function Admin() {
       if (file) {
           if (!ACCEPTED_STORY_VIDEO_TYPES.includes(file.type)) {
             alert("Use MP4, MOV ou WebM para os stories.");
-            return;
-          }
-          if (file.size > MAX_STORY_VIDEO_SIZE_BYTES) {
-            alert(`O vídeo ${index + 1} está maior que ${MAX_STORY_VIDEO_SIZE_MB} MB. Para evitar travar no cadastro, reduza o arquivo antes de subir.`);
             return;
           }
           applyStoryFile(index, file, URL.createObjectURL(file));
@@ -1036,7 +1019,6 @@ export default function Admin() {
                     <div className="space-y-1 text-[10px] text-gray-400">
                       <p>Você pode subir até 3 vídeos por peça. Se existir pelo menos 1 vídeo aqui, a peça entra automaticamente na faixa de stories.</p>
                       <p><span className="font-semibold text-gray-500">Ideal:</span> 1080p, de 8 a 15 segundos, até 5 MB.</p>
-                      <p><span className="font-semibold text-gray-500">Aceitável:</span> até 10 MB por vídeo.</p>
                       <p><span className="font-semibold text-gray-500">Dica:</span> se a internet estiver ruim, cadastre primeiro com 1 ou 2 stories e adicione o restante depois.</p>
                       <p><span className="font-semibold text-gray-500">Gravação no site:</span> o story já sai com limite de 15 segundos para facilitar o cadastro.</p>
                     </div>
@@ -1425,9 +1407,7 @@ export default function Admin() {
                 </div>
                 {recordingPreviewUrl && (
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
-                    {recordingPreviewTooLarge
-                      ? `O story abriu para revisão, mas passou de ${MAX_STORY_VIDEO_SIZE_MB} MB e não pode ser salvo assim.`
-                      : "Seu story está pronto. Agora você pode salvar este vídeo no produto ou gravar outro antes de continuar."}
+                    Seu story está pronto. Agora você pode salvar este vídeo no produto ou gravar outro antes de continuar.
                   </div>
                 )}
                 {isFinalizingRecording && !recordingPreviewUrl && (
@@ -1466,8 +1446,7 @@ export default function Admin() {
                       <button
                         type="button"
                         onClick={useRecordedStory}
-                        disabled={recordingPreviewTooLarge}
-                        className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-200"
+                        className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700"
                       >
                         Salvar este story
                       </button>
