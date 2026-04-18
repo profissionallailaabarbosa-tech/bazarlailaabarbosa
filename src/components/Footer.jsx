@@ -55,15 +55,23 @@ export default function Footer() {
         <div>
           <h3 className="mb-4 text-lg font-bold text-white">Fale Conosco</h3>
           <div className="space-y-3">
-            <a
-              href={whatsapp}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-green-500 px-5 py-3 font-bold text-white shadow-lg shadow-green-500/20 transition hover:scale-[1.02] sm:w-auto"
-            >
-              <MessageCircle size={18} />
-              WhatsApp
-            </a>
+            {whatsapp && (
+              <a
+                href={whatsapp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-green-500 px-5 py-3 font-bold text-white shadow-lg shadow-green-500/20 transition hover:scale-[1.02] sm:w-auto"
+              >
+                <MessageCircle size={18} />
+                WhatsApp
+              </a>
+            )}
+
+            {!whatsapp && (
+              <div className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-bold text-amber-700 sm:w-auto">
+                WhatsApp temporariamente indisponível
+              </div>
+            )}
 
             <a
               href="https://instagram.com/lailaabarbosa"

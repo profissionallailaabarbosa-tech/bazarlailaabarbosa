@@ -56,6 +56,15 @@ export default function OrderTracking() {
     return <Clock size={16} />;
   };
 
+  const visibleOrders = (orders || []).filter((order) => {
+    const paymentStatus = String(order?.payment_status || "").toLowerCase();
+    const status = String(order?.status || "").toLowerCase();
+    const hiddenPaymentStatuses = ["payment_link_error", "rejected", "cancelled", "charged_back"];
+    if (hiddenPaymentStatuses.includes(paymentStatus)) return false;
+    if (status === "expirado") return false;
+    return true;
+  });
+
   return (
     <div className="min-h-screen bg-rose-50/30 py-10 px-4 font-sans">
       <div className="max-w-xl mx-auto">
@@ -88,8 +97,8 @@ export default function OrderTracking() {
         </form>
 
         <div className="space-y-4">
-          {orders && orders.length > 0 ?(
-            orders.map((order) => (
+          {visibleOrders.length > 0 ?(
+            visibleOrders.map((order) => (
               <div key={order.id} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm animate-in fade-in slide-in-from-bottom-2">
                 <div className="flex justify-between items-start mb-4 border-b border-gray-50 pb-3">
                   <div>

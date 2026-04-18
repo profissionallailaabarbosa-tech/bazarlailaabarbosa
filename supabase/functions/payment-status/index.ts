@@ -17,6 +17,18 @@ function digitsOnly(value: unknown) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function toPublicOrder(order: Record<string, unknown> | null) {
+  if (!order) return null;
+  return {
+    id: order.id,
+    status: order.status,
+    payment_status: order.payment_status,
+    delivery_method: order.delivery_method,
+    total_amount: order.total_amount,
+    items: order.items,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
@@ -36,10 +48,6 @@ Deno.serve(async (req) => {
     if (!Number.isFinite(orderId)) {
       return json(400, { error: "invalid_order_id" });
     }
-    if (customerPhone.length < 10) {
-      return json(400, { error: "invalid_customer_phone" });
-    }
-
     const fetchOrder = async () => {
       const orderRes = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}&select=id,status,payment_status,payment_id,paid_at,customer_name,customer_phone,delivery_method,total_amount,items`, {
         headers: {
@@ -63,12 +71,14 @@ Deno.serve(async (req) => {
     }
 
     const orderPhone = digitsOnly(initialOrder.customer_phone);
+    const shouldValidatePhone = customerPhone.length >= 10;
     const phoneMatches =
+      !shouldValidatePhone ||
       orderPhone === customerPhone ||
       orderPhone === customerPhone.slice(-11) ||
       orderPhone.slice(-11) === customerPhone.slice(-11);
 
-    if (!phoneMatches) {
+    if (shouldValidatePhone && !phoneMatches) {
       return json(403, { error: "unauthorized_order_access" });
     }
 
@@ -80,7 +90,7 @@ Deno.serve(async (req) => {
 
     const mpSearchData = await mpSearchRes.json();
     if (!mpSearchRes.ok) {
-      return json(400, { error: "mp_payment_search_failed", details: mpSearchData, order: initialOrder });
+      return json(400, { error: "mp_payment_search_failed", details: mpSearchData, order: toPublicOrder(initialOrder) });
     }
 
     const latestPayment = mpSearchData?.results?.[0] || null;
@@ -109,7 +119,7 @@ Deno.serve(async (req) => {
           details: await captureRes.text(),
           mp_status: latestPayment.status,
           mp_payment_id: latestPayment.id,
-          order: initialOrder,
+          order: toPublicOrder(initialOrder),
         });
       }
     }
@@ -118,7 +128,7 @@ Deno.serve(async (req) => {
 
     return json(200, {
       ok: true,
-      order: freshOrder,
+      order: toPublicOrder(freshOrder),
       mp_payment_status: latestPayment?.status || null,
       mp_payment_id: latestPayment?.id ? String(latestPayment.id) : null,
       found_payment: !!latestPayment,

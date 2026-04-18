@@ -2,10 +2,22 @@
 import { useNavigate } from "react-router-dom";
 import { Check, Clock, CreditCard, Loader2, MapPin, ShoppingBag, Smartphone, Truck, User } from "lucide-react";
 import { supabase } from "../api/supabase";
-import { buildWhatsAppLink } from "../utils/whatsapp";
+import { buildWhatsAppLink, resolveWhatsAppBase } from "../utils/whatsapp";
 
 const PENDING_PAYMENT_STORAGE_KEY = "pending_checkout_order";
 const digitsOnly = (value) => String(value || "").replace(/\D/g, "");
+const buildCheckoutSignature = ({ customerPhone, paymentMethod, deliveryMethod, totalAmount, items }) =>
+  JSON.stringify({
+    customerPhone: digitsOnly(customerPhone),
+    paymentMethod: String(paymentMethod || ""),
+    deliveryMethod: String(deliveryMethod || ""),
+    totalAmount: Number(totalAmount || 0).toFixed(2),
+    items: (items || []).map((item) => ({
+      id: item.id,
+      qty: Number(item.quantitySelected || item.quantity || 1),
+      price: Number(item.price || 0),
+    })),
+  });
 const formatPhoneDisplay = (value) => {
   const digits = digitsOnly(value).slice(0, 11);
   if (digits.length <= 2) return digits;
@@ -102,10 +114,13 @@ export default function Checkout() {
     };
 
     const syncOrderWithProvider = async () => {
-      if (!pendingPhone) return null;
+      const payload = { order_id: Number(orderId) };
+      if (pendingPhone) {
+        payload.customer_phone = pendingPhone;
+      }
       try {
         const { data, error } = await supabase.functions.invoke("payment-status", {
-          body: { order_id: Number(orderId), customer_phone: pendingPhone },
+          body: payload,
         });
         if (error) throw error;
         return data?.order || null;
@@ -268,6 +283,7 @@ export default function Checkout() {
   const getPhoneDigits = (value) => digitsOnly(value);
   const getCpfDigits = (value) => digitsOnly(value);
   const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+  const whatsappBase = resolveWhatsAppBase(config?.whatsapp_number || config?.whatsapp);
   const isDeliveryMethodAvailable = (method) => method === "correios" ?!!config?.enable_shipping_calc : method === "retirada" ?!!config?.enable_pickup : method === "uber" ?!!config?.enable_uber : false;
   const isPaymentMethodAvailable = (method) => method === "pix" ?!!config?.enable_pix : method === "card" ?!!config?.enable_credit_card : false;
   const getCustomerError = () =>
@@ -282,7 +298,7 @@ export default function Checkout() {
             : null;
   const getAddressError = () => !requiresAddress ?null : !formData.address.cep?.trim() ?"Informe o CEP." : !formData.address.street?.trim() ?"Informe a rua." : !formData.address.number?.trim() ?"Informe o número." : !formData.address.neighborhood?.trim() ?"Informe o bairro." : !formData.address.city?.trim() ?"Informe a cidade." : !formData.address.state?.trim() ?"Informe o estado (UF)." : null;
   const getStep2Error = () => getCustomerError() || (!isDeliveryMethodAvailable(formData.delivery_method) ?"Selecione uma forma de entrega para continuar." : getAddressError());
-  const getFinalizeError = () => getStep2Error() || (!isPaymentMethodAvailable(formData.payment_method) ?"Selecione uma forma de pagamento disponível antes de continuar." : !isDeliveryMethodAvailable(formData.delivery_method) ?"Selecione uma forma de entrega antes de continuar." : null);
+  const getFinalizeError = () => getStep2Error() || (!isPaymentMethodAvailable(formData.payment_method) ?"Selecione uma forma de pagamento disponível antes de continuar." : !isDeliveryMethodAvailable(formData.delivery_method) ?"Selecione uma forma de entrega antes de continuar." : !whatsappBase ?"Configure o WhatsApp da loja antes de finalizar pedidos." : null);
 
   const handleFinalize = async () => {
     const finalizeError = getFinalizeError();
@@ -296,8 +312,26 @@ export default function Checkout() {
       const statusPagamentoBanco = formData.payment_method === "pix" || formData.payment_method === "card" ?"Aguardando Pagamento" : "Pendente";
       const normalizedPhone = getPhoneDigits(formData.phone);
       const normalizedCpf = getCpfDigits(formData.cpf);
-      const { data: order, error } = await supabase.rpc("create_order_with_stock", { p_customer_name: formData.name, p_customer_phone: normalizedPhone, p_address: addressFull, p_total_amount: total, p_payment_method: formData.payment_method, p_delivery_method: formData.delivery_method, p_status: statusPagamentoBanco, p_items: cart });
-      if (error) throw error;
+      const checkoutSignature = buildCheckoutSignature({
+        customerPhone: normalizedPhone,
+        paymentMethod: formData.payment_method,
+        deliveryMethod: formData.delivery_method,
+        totalAmount: total,
+        items: cart,
+      });
+      const pendingPaymentRaw = localStorage.getItem(PENDING_PAYMENT_STORAGE_KEY);
+      const pendingPayment = pendingPaymentRaw ? JSON.parse(pendingPaymentRaw) : null;
+      const canReusePendingOrder =
+        pendingPayment?.order_id &&
+        pendingPayment?.checkout_signature === checkoutSignature &&
+        Date.now() - new Date(pendingPayment.created_at).getTime() < 1000 * 60 * 30;
+
+      let order = canReusePendingOrder ? { id: pendingPayment.order_id } : null;
+      if (!canReusePendingOrder) {
+        const { data, error } = await supabase.rpc("create_order_with_stock", { p_customer_name: formData.name, p_customer_phone: normalizedPhone, p_address: addressFull, p_total_amount: total, p_payment_method: formData.payment_method, p_delivery_method: formData.delivery_method, p_status: statusPagamentoBanco, p_items: cart });
+        if (error) throw error;
+        order = data;
+      }
 
       const itemsList = cart.map((item) => `- ${item.quantitySelected || item.quantity || 1}x ${item.name}`).join("\n");
       const textoPagamento = formData.payment_method === "pix" ?"PIX" : "Cartão de Crédito";
@@ -321,6 +355,17 @@ export default function Checkout() {
         }
         let paymentData;
         try {
+          localStorage.setItem(PENDING_PAYMENT_STORAGE_KEY, JSON.stringify({
+            order_id: order?.id,
+            created_at: new Date().toISOString(),
+            customer_name: formData.name,
+            customer_phone: normalizedPhone,
+            payment_method: formData.payment_method,
+            delivery_method: formData.delivery_method,
+            total_amount: total,
+            items: cart,
+            checkout_signature: checkoutSignature,
+          }));
           const { data, error: paymentError } = await supabase.functions.invoke("create-payment", { body: { order_id: order?.id, external_reference: String(order?.id), payer_email: formData.email || undefined, items: paymentItems, success_url: `${origin}/checkout?payment=success&order=${order?.id}`, pending_url: `${origin}/checkout?payment=pending&order=${order?.id}`, failure_url: `${origin}/checkout?payment=failure&order=${order?.id}` } });
           if (paymentError) throw paymentError;
           paymentData = data;
@@ -330,22 +375,15 @@ export default function Checkout() {
         }
         const paymentUrl = paymentData?.init_point || paymentData?.sandbox_init_point;
         if (!paymentUrl) throw new Error("Não foi possível gerar link de pagamento.");
-        localStorage.setItem(PENDING_PAYMENT_STORAGE_KEY, JSON.stringify({
-          order_id: order?.id,
-          created_at: new Date().toISOString(),
-          customer_name: formData.name,
-          customer_phone: normalizedPhone,
-          payment_method: formData.payment_method,
-          delivery_method: formData.delivery_method,
-          total_amount: total,
-          items: cart,
-        }));
         window.location.href = paymentUrl;
         return;
       }
 
       const whatsappSource = config?.whatsapp_number || config?.whatsapp;
       const whatsappUrl = buildWhatsAppLink(whatsappSource, msg);
+      if (!whatsappUrl) {
+        throw new Error("WhatsApp da loja não configurado. Ajuste isso no painel admin antes de continuar.");
+      }
       localStorage.removeItem("carrinho_laila");
       localStorage.removeItem("cart");
       localStorage.removeItem("checkout_data");
@@ -400,7 +438,7 @@ export default function Checkout() {
             {mpReturnState.stage === "pending" && (
               <div className="space-y-3">
                 <button onClick={() => window.location.reload()} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">Verificar novamente</button>
-                <button onClick={() => { setMpReturnHandled(true); window.location.href = mpReturnState.continueUrl; }} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Falar com a loja no WhatsApp</button>
+                {mpReturnState.continueUrl && <button onClick={() => { setMpReturnHandled(true); window.location.href = mpReturnState.continueUrl; }} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Falar com a loja no WhatsApp</button>}
                 <button onClick={() => navigate("/cart")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a sacola</button>
               </div>
             )}

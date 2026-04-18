@@ -1,5 +1,3 @@
-const DEFAULT_WHATSAPP_NUMBER = "5511990174644";
-
 function normalizeSource(value) {
   if (!value) return "";
   return String(value).trim();
@@ -9,7 +7,7 @@ export function resolveWhatsAppBase(value) {
   const raw = normalizeSource(value);
 
   if (!raw) {
-    return `https://wa.me/${DEFAULT_WHATSAPP_NUMBER}`;
+    return "";
   }
 
   if (/^https?:\/\//i.test(raw)) {
@@ -21,11 +19,12 @@ export function resolveWhatsAppBase(value) {
   }
 
   const digits = raw.replace(/\D/g, "");
-  return `https://wa.me/${digits || DEFAULT_WHATSAPP_NUMBER}`;
+  return digits ? `https://wa.me/${digits}` : "";
 }
 
 export function buildWhatsAppLink(value, text) {
   const base = resolveWhatsAppBase(value);
+  if (!base) return "";
 
   if (!text) return base;
 

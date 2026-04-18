@@ -4,7 +4,7 @@ import { db } from '../api/supabase';
 import { resolveWhatsAppBase } from "../utils/whatsapp";
 
 export default function WhatsAppButton() {
-  const [link, setLink] = useState("https://wa.me/");
+  const [link, setLink] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -23,6 +23,8 @@ export default function WhatsAppButton() {
       active = false;
     };
   }, []);
+
+  if (!link) return null;
 
   return (
     <a
