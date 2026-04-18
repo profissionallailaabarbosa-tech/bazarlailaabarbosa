@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Volume2, VolumeX, ChevronLeft, ChevronRight, Video } from "lucide-react";
 import { supabase } from "../api/supabase";
 import ProductCard from "../components/ProductCard";
@@ -148,7 +148,10 @@ export default function Home() {
     [products]
   );
   const activeStory = activeStoryIndex !== null ?storiesProducts[activeStoryIndex] : null;
-  const activeStoryVideos = activeStory ?getProductStoryVideos(activeStory) : [];
+  const activeStoryVideos = useMemo(
+    () => (activeStory ? getProductStoryVideos(activeStory) : []),
+    [activeStory]
+  );
   const activeStoryVideo = activeStoryVideos[activeStoryClipIndex] || "";
 
   const scrollToProducts = () => {
@@ -159,6 +162,7 @@ export default function Home() {
   };
 
   const openStory = (index) => {
+    if (!storiesProducts[index] || getProductStoryVideos(storiesProducts[index]).length === 0) return;
     setActiveStoryIndex(index);
     setActiveStoryClipIndex(0);
     setIsStoryMuted(true);
@@ -174,6 +178,30 @@ export default function Home() {
     setStoryVideoVisible(false);
   };
 
+  const returnToHomeFromStory = useCallback(() => {
+    closeStory();
+    navigate("/", { replace: true });
+  }, [navigate]);
+
+  const findNextStoryPosition = useCallback(
+    (startStoryIndex, startClipIndex = 0) => {
+      if (!storiesProducts.length) return null;
+
+      for (let storyIndex = startStoryIndex; storyIndex < storiesProducts.length; storyIndex += 1) {
+        const videos = getProductStoryVideos(storiesProducts[storyIndex]);
+        const clipStart = storyIndex === startStoryIndex ? startClipIndex : 0;
+        for (let clipIndex = clipStart; clipIndex < videos.length; clipIndex += 1) {
+          if (videos[clipIndex]) {
+            return { storyIndex, clipIndex };
+          }
+        }
+      }
+
+      return null;
+    },
+    [storiesProducts]
+  );
+
   const openProductFromStory = () => {
     if (!activeStory) return;
     closeStory();
@@ -181,7 +209,10 @@ export default function Home() {
   };
 
   const goToPrevStory = () => {
-    if (!storiesProducts.length) return;
+    if (!storiesProducts.length) {
+      returnToHomeFromStory();
+      return;
+    }
     if (activeStory && activeStoryClipIndex > 0) {
       setActiveStoryClipIndex((current) => Math.max(0, current - 1));
       setIsStoryMuted(true);
@@ -206,7 +237,10 @@ export default function Home() {
   };
 
   const goToNextStory = () => {
-    if (!storiesProducts.length) return;
+    if (!storiesProducts.length) {
+      returnToHomeFromStory();
+      return;
+    }
     if (activeStory && activeStoryClipIndex < activeStoryVideos.length - 1) {
       setActiveStoryClipIndex((current) => current + 1);
       setIsStoryMuted(true);
@@ -214,11 +248,16 @@ export default function Home() {
       setStoryVideoVisible(false);
       return;
     }
-    setActiveStoryIndex((current) => {
-      if (current === null) return 0;
-      return current === storiesProducts.length - 1 ?0 : current + 1;
-    });
-    setActiveStoryClipIndex(0);
+    const nextPosition = findNextStoryPosition(
+      activeStoryIndex === null ? 0 : activeStoryIndex + 1,
+      0
+    );
+    if (!nextPosition) {
+      returnToHomeFromStory();
+      return;
+    }
+    setActiveStoryIndex(nextPosition.storyIndex);
+    setActiveStoryClipIndex(nextPosition.clipIndex);
     setIsStoryMuted(true);
     setStoryProgress(0);
     setStoryVideoVisible(false);
@@ -228,6 +267,59 @@ export default function Home() {
     setStoryProgress(0);
     setStoryVideoVisible(false);
   }, [activeStoryIndex, activeStoryClipIndex]);
+
+  useEffect(() => {
+    if (activeStoryIndex === null) return;
+    if (storiesProducts.length === 0) {
+      returnToHomeFromStory();
+      return;
+    }
+    if (!storiesProducts[activeStoryIndex]) {
+      setActiveStoryIndex(0);
+      setActiveStoryClipIndex(0);
+      setStoryVideoVisible(false);
+    }
+  }, [storiesProducts, activeStoryIndex, returnToHomeFromStory]);
+
+  useEffect(() => {
+    if (activeStoryIndex === null) return;
+    if (!activeStory || activeStoryVideos.length === 0) {
+      const nextPosition = findNextStoryPosition(
+        activeStoryIndex,
+        activeStoryClipIndex + 1
+      );
+      if (nextPosition) {
+        setActiveStoryIndex(nextPosition.storyIndex);
+        setActiveStoryClipIndex(nextPosition.clipIndex);
+        setStoryVideoVisible(false);
+        setStoryProgress(0);
+        setIsStoryMuted(true);
+      } else {
+        returnToHomeFromStory();
+      }
+      return;
+    }
+    if (!activeStoryVideo) {
+      const nextPosition = findNextStoryPosition(
+        activeStoryIndex,
+        activeStoryClipIndex + 1
+      );
+      if (nextPosition) {
+        setActiveStoryIndex(nextPosition.storyIndex);
+        setActiveStoryClipIndex(nextPosition.clipIndex);
+        setStoryVideoVisible(false);
+        setStoryProgress(0);
+        setIsStoryMuted(true);
+      } else {
+        returnToHomeFromStory();
+      }
+      return;
+    }
+    if (activeStoryClipIndex > activeStoryVideos.length - 1) {
+      setActiveStoryClipIndex(0);
+      setStoryVideoVisible(false);
+    }
+  }, [activeStory, activeStoryVideos, activeStoryVideo, activeStoryClipIndex, activeStoryIndex, returnToHomeFromStory, findNextStoryPosition]);
 
   const handleStoryTimeUpdate = () => {
     const video = storyVideoRef.current;
@@ -522,6 +614,8 @@ export default function Home() {
                 onEnded={goToNextStory}
                 onTimeUpdate={handleStoryTimeUpdate}
                 onLoadedData={() => setStoryVideoVisible(true)}
+                onError={goToNextStory}
+                onEmptied={goToNextStory}
                 poster={
                   activeStoryClipIndex === 0
                     ?getProductCoverImage(activeStory)
