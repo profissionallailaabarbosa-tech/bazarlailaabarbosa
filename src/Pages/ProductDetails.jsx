@@ -12,8 +12,6 @@ export default function ProductDetails() {
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(null);
-  const [showVideo, setShowVideo] = useState(false);
-  const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   const touchStartXRef = useRef(null);
   const touchStartYRef = useRef(null);
 
@@ -42,8 +40,6 @@ export default function ProductDetails() {
 
         if (data && active) {
           setProduct(data);
-          setShowVideo(false);
-          setActiveVideoIndex(0);
           setSelectedImage((currentImage) => {
             const safePrimaryImage = sanitizeMediaUrl(data.image);
             const availableImages = sanitizeMediaList([safePrimaryImage, ...(data.gallery || [])]);
@@ -147,7 +143,7 @@ export default function ProductDetails() {
   const handleBuyNow = () => {
     if (!product) return;
     handleAddToCart({ redirectToCart: false });
-    navigate("/checkout");
+    window.location.assign("/checkout");
   };
 
   if (loading) {
@@ -160,7 +156,6 @@ export default function ProductDetails() {
 
   const allImages = sanitizeMediaList([product.image, ...(product.gallery || [])]);
   const storyVideos = getProductStoryVideos(product);
-  const activeVideo = storyVideos[activeVideoIndex] || "";
   const maxStock = parseInt(product.quantity, 10) || 0;
   const isSoldOut = maxStock <= 0;
   const stockMessage = isSoldOut ?"Sem estoque no momento" : "Peça disponível agora";
@@ -174,10 +169,6 @@ export default function ProductDetails() {
     }[product.category] || product.category || "Coleção";
 
   const goToPrevMedia = () => {
-    if (showVideo && storyVideos.length > 0) {
-      setActiveVideoIndex((current) => (current === 0 ? storyVideos.length - 1 : current - 1));
-      return;
-    }
     if (allImages.length <= 1) return;
     const currentIndex = Math.max(0, allImages.indexOf(selectedImage));
     const nextIndex = currentIndex === 0 ? allImages.length - 1 : currentIndex - 1;
@@ -185,10 +176,6 @@ export default function ProductDetails() {
   };
 
   const goToNextMedia = () => {
-    if (showVideo && storyVideos.length > 0) {
-      setActiveVideoIndex((current) => (current === storyVideos.length - 1 ? 0 : current + 1));
-      return;
-    }
     if (allImages.length <= 1) return;
     const currentIndex = Math.max(0, allImages.indexOf(selectedImage));
     const nextIndex = currentIndex === allImages.length - 1 ? 0 : currentIndex + 1;
@@ -231,6 +218,11 @@ export default function ProductDetails() {
     touchStartYRef.current = null;
   };
 
+  const handleOpenStories = () => {
+    if (!storyVideos.length) return;
+    navigate(`/?story=${product.id}`);
+  };
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#fffaf7_100%)] pb-28 pt-4 font-sans text-gray-700 md:pb-20">
       <div className="mx-auto max-w-6xl px-4 lg:py-10">
@@ -251,24 +243,11 @@ export default function ProductDetails() {
               onTouchCancel={handleTouchCancel}
               style={{ touchAction: "none" }}
             >
-              {showVideo && activeVideo ?(
-                <video
-                  key={`${product.id}-${activeVideoIndex}`}
-                  src={activeVideo}
-                  className="h-full w-full object-cover"
-                  autoPlay
-                  loop
-                  playsInline
-                  controls
-                  poster={product.image}
-                />
-              ) : (
-                <img
-                  src={selectedImage}
-                  alt={product.name}
-                  className="h-full w-full animate-in object-cover fade-in duration-500"
-                />
-              )}
+              <img
+                src={selectedImage}
+                alt={product.name}
+                className="h-full w-full animate-in object-cover fade-in duration-500"
+              />
               {isSoldOut && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                   <span className="transform -rotate-12 rounded-full border-2 border-white bg-red-600 px-6 py-2 font-bold text-white shadow-lg">
@@ -276,41 +255,20 @@ export default function ProductDetails() {
                   </span>
                 </div>
               )}
-              {storyVideos.length > 0 && !showVideo && (
+              {storyVideos.length > 0 && (
                 <button
-                  onClick={() => {
-                    setActiveVideoIndex(0);
-                    setShowVideo(true);
-                  }}
+                  onClick={handleOpenStories}
                   className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-sm font-bold text-white backdrop-blur hover:bg-black/75"
                 >
-                  <Video size={16} /> {storyVideos.length > 1 ?"Ver vídeos" : "Ver vídeo"}
+                  <Video size={16} /> {storyVideos.length > 1 ?"Ver nos stories" : "Ver no story"}
                 </button>
               )}
             </div>
 
-            {(allImages.length > 1 || storyVideos.length > 1) && (
+            {allImages.length > 1 && (
               <p className="mx-auto max-w-[430px] text-center text-[11px] uppercase tracking-[0.18em] text-gray-400 lg:max-w-none">
-                Arraste para o lado para ver a próxima mídia
+                Arraste para o lado para ver a próxima foto
               </p>
-            )}
-
-            {showVideo && storyVideos.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {storyVideos.map((videoUrl, index) => (
-                  <button
-                    key={videoUrl}
-                    onClick={() => setActiveVideoIndex(index)}
-                    className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] shadow-sm ${
-                      activeVideoIndex === index
-                        ?"bg-gray-900 text-white"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    Story {index + 1}
-                  </button>
-                ))}
-              </div>
             )}
 
             {allImages.length > 1 && (
@@ -318,12 +276,9 @@ export default function ProductDetails() {
                 {allImages.map((img, idx) => (
                   <button
                     key={idx}
-                    onClick={() => {
-                      setSelectedImage(img);
-                      setShowVideo(false);
-                    }}
+                    onClick={() => setSelectedImage(img)}
                     className={`h-16 w-16 flex-shrink-0 snap-start overflow-hidden rounded-2xl border-2 bg-white shadow-sm transition-all sm:h-20 sm:w-20 ${
-                      selectedImage === img && !showVideo
+                      selectedImage === img
                         ?"border-rose-500 ring-2 ring-rose-100"
                         : "border-transparent opacity-70 hover:opacity-100"
                     }`}

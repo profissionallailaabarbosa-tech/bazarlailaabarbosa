@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Search, X, Volume2, VolumeX, ChevronLeft, ChevronRight, Video } from "lucide-react";
 import { supabase } from "../api/supabase";
 import ProductCard from "../components/ProductCard";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { sanitizeMediaList, sanitizeMediaUrl } from "../utils/media";
 
 export default function Home() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const MAX_STORY_VIDEO_COUNT = 3;
   const categoryLabels = {
     vestidos: "Vestidos",
@@ -161,14 +162,17 @@ export default function Home() {
     }
   };
 
-  const openStory = (index) => {
-    if (!storiesProducts[index] || getProductStoryVideos(storiesProducts[index]).length === 0) return;
-    setActiveStoryIndex(index);
-    setActiveStoryClipIndex(0);
-    setIsStoryMuted(true);
-    setStoryProgress(0);
-    setStoryVideoVisible(false);
-  };
+  const openStory = useCallback(
+    (index) => {
+      if (!storiesProducts[index] || getProductStoryVideos(storiesProducts[index]).length === 0) return;
+      setActiveStoryIndex(index);
+      setActiveStoryClipIndex(0);
+      setIsStoryMuted(true);
+      setStoryProgress(0);
+      setStoryVideoVisible(false);
+    },
+    [storiesProducts]
+  );
 
   const closeStory = () => {
     setActiveStoryIndex(null);
@@ -182,6 +186,16 @@ export default function Home() {
     closeStory();
     navigate("/", { replace: true });
   }, [navigate]);
+
+  const openStoryByProductId = useCallback(
+    (productId) => {
+      const storyIndex = storiesProducts.findIndex((product) => String(product.id) === String(productId));
+      if (storyIndex === -1) return false;
+      openStory(storyIndex);
+      return true;
+    },
+    [storiesProducts, openStory]
+  );
 
   const findNextStoryPosition = useCallback(
     (startStoryIndex, startClipIndex = 0) => {
@@ -267,6 +281,16 @@ export default function Home() {
     setStoryProgress(0);
     setStoryVideoVisible(false);
   }, [activeStoryIndex, activeStoryClipIndex]);
+
+  useEffect(() => {
+    const requestedStoryId = searchParams.get("story");
+    if (!requestedStoryId || storiesProducts.length === 0 || activeStoryIndex !== null) return;
+
+    const opened = openStoryByProductId(requestedStoryId);
+    if (!opened) {
+      navigate("/", { replace: true });
+    }
+  }, [searchParams, storiesProducts, activeStoryIndex, openStoryByProductId, navigate]);
 
   useEffect(() => {
     if (activeStoryIndex === null) return;

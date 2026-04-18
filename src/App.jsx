@@ -7,12 +7,40 @@ import WhatsAppButton from "./components/WhatsAppButton";
 import ScrollToTop from "./components/ScrollToTop";
 import { ComoComprar, Envios, Trocas } from "./Pages/InfoPages";
 
-const Home = lazy(() => import("./Pages/Home"));
-const Cart = lazy(() => import("./Pages/Cart"));
-const Checkout = lazy(() => import("./Pages/Checkout"));
-const Admin = lazy(() => import("./Pages/Admin"));
-const ProductDetails = lazy(() => import("./Pages/ProductDetails"));
-const OrderTracking = lazy(() => import("./Pages/OrderTracking"));
+const lazyWithRetry = (importer, retryKey) =>
+  lazy(async () => {
+    const storageKey = `lazy-retry:${retryKey}`;
+
+    try {
+      const module = await importer();
+      sessionStorage.removeItem(storageKey);
+      return module;
+    } catch (error) {
+      const alreadyRetried = sessionStorage.getItem(storageKey) === "1";
+      const message = String(error?.message || "");
+      const isChunkError =
+        /Failed to fetch dynamically imported module/i.test(message) ||
+        /Importing a module script failed/i.test(message) ||
+        /Loading chunk/i.test(message) ||
+        /ChunkLoadError/i.test(message);
+
+      if (isChunkError && !alreadyRetried) {
+        sessionStorage.setItem(storageKey, "1");
+        window.location.reload();
+        return new Promise(() => {});
+      }
+
+      sessionStorage.removeItem(storageKey);
+      throw error;
+    }
+  });
+
+const Home = lazyWithRetry(() => import("./Pages/Home"), "home");
+const Cart = lazyWithRetry(() => import("./Pages/Cart"), "cart");
+const Checkout = lazyWithRetry(() => import("./Pages/Checkout"), "checkout");
+const Admin = lazyWithRetry(() => import("./Pages/Admin"), "admin");
+const ProductDetails = lazyWithRetry(() => import("./Pages/ProductDetails"), "product-details");
+const OrderTracking = lazyWithRetry(() => import("./Pages/OrderTracking"), "order-tracking");
 
 const PageFallback = () => (
   <div className="flex min-h-[50vh] items-center justify-center px-4 text-sm font-medium text-rose-500">
