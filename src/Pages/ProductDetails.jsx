@@ -1,15 +1,31 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../api/supabase";
-import { ArrowLeft, ShoppingBag, Truck, ShieldCheck, Minus, Plus } from "lucide-react";
+import { ArrowLeft, ShoppingBag, Truck, ShieldCheck, Minus, Plus, HeartHandshake, Sparkles, Video } from "lucide-react";
+import { sanitizeMediaList, sanitizeMediaUrl } from "../utils/media";
 
 export default function ProductDetails() {
+  const MAX_STORY_VIDEO_COUNT = 3;
   const { id } = useParams();
   const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [showVideo, setShowVideo] = useState(false);
+  const [activeVideoIndex, setActiveVideoIndex] = useState(0);
+  const touchStartXRef = useRef(null);
+  const touchStartYRef = useRef(null);
+
+  const getProductStoryVideos = (item) => {
+    const storyVideos = Array.isArray(item?.story_videos)
+      ?item.story_videos
+      : [];
+
+    const legacyVideo = typeof item?.video === "string" ?item.video.trim() : "";
+
+    return sanitizeMediaList([...storyVideos, legacyVideo]).slice(0, MAX_STORY_VIDEO_COUNT);
+  };
 
   useEffect(() => {
     let active = true;
@@ -26,10 +42,13 @@ export default function ProductDetails() {
 
         if (data && active) {
           setProduct(data);
+          setShowVideo(false);
+          setActiveVideoIndex(0);
           setSelectedImage((currentImage) => {
-            if (!currentImage) return data.image;
-            const availableImages = [data.image, ...(data.gallery || [])].filter(Boolean);
-            return availableImages.includes(currentImage) ? currentImage : data.image;
+            const safePrimaryImage = sanitizeMediaUrl(data.image);
+            const availableImages = sanitizeMediaList([safePrimaryImage, ...(data.gallery || [])]);
+            if (!currentImage) return safePrimaryImage;
+            return availableImages.includes(currentImage) ?currentImage : safePrimaryImage;
           });
         }
       } catch (err) {
@@ -50,8 +69,22 @@ export default function ProductDetails() {
       )
       .subscribe();
 
+    const intervalId = window.setInterval(() => {
+      loadProduct();
+    }, 10000);
+
+    const handleWindowFocus = () => {
+      loadProduct();
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleWindowFocus);
+
     return () => {
       active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleWindowFocus);
       supabase.removeChannel(channel);
     };
   }, [id]);
@@ -71,12 +104,14 @@ export default function ProductDetails() {
   const saveToCart = (items) => {
     try {
       localStorage.setItem("carrinho_laila", JSON.stringify(items));
+      window.dispatchEvent(new Event("cart-updated"));
       return true;
     } catch (e) {
-      console.error("Memoria cheia:", e);
-      alert("A memoria do carrinho encheu. Vamos manter so o item mais recente.");
+      console.error("Memória cheia:", e);
+      alert("A memória do carrinho encheu. Vamos manter só o item mais recente.");
       localStorage.removeItem("carrinho_laila");
       localStorage.setItem("carrinho_laila", JSON.stringify([items[items.length - 1]]));
+      window.dispatchEvent(new Event("cart-updated"));
       return true;
     }
   };
@@ -86,7 +121,7 @@ export default function ProductDetails() {
 
     const maxStock = parseInt(product.quantity, 10) || 0;
     if (maxStock <= 0) {
-      alert("Esta peca esgotou.");
+      alert("Esta peça esgotou.");
       return;
     }
 
@@ -102,6 +137,7 @@ export default function ProductDetails() {
 
     if (saveToCart(cart)) {
       window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new Event("cart-updated"));
       if (redirectToCart) {
         navigate("/cart");
       }
@@ -119,136 +155,346 @@ export default function ProductDetails() {
   }
 
   if (!product) {
-    return <div className="min-h-screen flex items-center justify-center">Produto nao encontrado.</div>;
+    return <div className="min-h-screen flex items-center justify-center">Produto não encontrado.</div>;
   }
 
-  const allImages = [product.image, ...(product.gallery || [])].filter(Boolean);
+  const allImages = sanitizeMediaList([product.image, ...(product.gallery || [])]);
+  const storyVideos = getProductStoryVideos(product);
+  const activeVideo = storyVideos[activeVideoIndex] || "";
   const maxStock = parseInt(product.quantity, 10) || 0;
   const isSoldOut = maxStock <= 0;
+  const stockMessage = isSoldOut ?"Sem estoque no momento" : "Peça disponível agora";
+  const categoryLabel =
+    {
+      vestidos: "Vestidos",
+      conjuntos: "Conjuntos",
+      blusas: "Blusas",
+      saias: "Saias",
+      calcas: "Calças",
+    }[product.category] || product.category || "Coleção";
+
+  const goToPrevMedia = () => {
+    if (showVideo && storyVideos.length > 0) {
+      setActiveVideoIndex((current) => (current === 0 ? storyVideos.length - 1 : current - 1));
+      return;
+    }
+    if (allImages.length <= 1) return;
+    const currentIndex = Math.max(0, allImages.indexOf(selectedImage));
+    const nextIndex = currentIndex === 0 ? allImages.length - 1 : currentIndex - 1;
+    setSelectedImage(allImages[nextIndex]);
+  };
+
+  const goToNextMedia = () => {
+    if (showVideo && storyVideos.length > 0) {
+      setActiveVideoIndex((current) => (current === storyVideos.length - 1 ? 0 : current + 1));
+      return;
+    }
+    if (allImages.length <= 1) return;
+    const currentIndex = Math.max(0, allImages.indexOf(selectedImage));
+    const nextIndex = currentIndex === allImages.length - 1 ? 0 : currentIndex + 1;
+    setSelectedImage(allImages[nextIndex]);
+  };
+
+  const handleTouchStart = (event) => {
+    touchStartXRef.current = event.changedTouches?.[0]?.clientX ?? null;
+    touchStartYRef.current = event.changedTouches?.[0]?.clientY ?? null;
+  };
+
+  const handleTouchMove = (event) => {
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const moveX = event.changedTouches?.[0]?.clientX ?? null;
+    const moveY = event.changedTouches?.[0]?.clientY ?? null;
+    if (moveX === null || moveY === null) return;
+
+    const deltaX = Math.abs(touchStartXRef.current - moveX);
+    const deltaY = Math.abs(touchStartYRef.current - moveY);
+
+    if (deltaX > deltaY && deltaX > 12) {
+      event.preventDefault();
+    }
+  };
+
+  const handleTouchEnd = (event) => {
+    if (touchStartXRef.current === null) return;
+    const endX = event.changedTouches?.[0]?.clientX ?? null;
+    if (endX === null) return;
+    const deltaX = touchStartXRef.current - endX;
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+    if (Math.abs(deltaX) < 45) return;
+    if (deltaX > 0) goToNextMedia();
+    if (deltaX < 0) goToPrevMedia();
+  };
+
+  const handleTouchCancel = () => {
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+  };
 
   return (
-    <div className="min-h-screen bg-white pb-20 pt-4 font-sans text-gray-700">
-      <div className="max-w-6xl mx-auto px-4 lg:py-10">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#fffaf7_100%)] pb-28 pt-4 font-sans text-gray-700 md:pb-20">
+      <div className="mx-auto max-w-6xl px-4 lg:py-10">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center text-gray-500 hover:text-rose-500 mb-6 font-medium transition"
+          className="mb-6 flex items-center font-medium text-gray-500 transition hover:text-rose-500"
         >
           <ArrowLeft className="mr-2" size={20} /> Voltar
         </button>
 
-        <div className="grid lg:grid-cols-2 gap-10">
+        <div className="grid gap-6 lg:grid-cols-2 lg:gap-10">
           <div className="space-y-4">
-            <div className="aspect-[3/4] lg:aspect-square bg-gray-50 rounded-2xl overflow-hidden shadow-sm border border-gray-100 relative">
-              <img
-                src={selectedImage}
-                alt={product.name}
-                className="w-full h-full object-cover animate-in fade-in duration-500"
-              />
+            <div
+              className="relative mx-auto aspect-square max-w-[430px] overflow-hidden rounded-[1.6rem] border border-[#efe3dc] bg-white shadow-[0_28px_60px_-42px_rgba(15,23,42,0.24)] sm:aspect-[4/5] lg:max-w-none lg:aspect-square lg:rounded-[1.9rem]"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchCancel}
+              style={{ touchAction: "none" }}
+            >
+              {showVideo && activeVideo ?(
+                <video
+                  key={`${product.id}-${activeVideoIndex}`}
+                  src={activeVideo}
+                  className="h-full w-full object-cover"
+                  autoPlay
+                  loop
+                  playsInline
+                  controls
+                  poster={product.image}
+                />
+              ) : (
+                <img
+                  src={selectedImage}
+                  alt={product.name}
+                  className="h-full w-full animate-in object-cover fade-in duration-500"
+                />
+              )}
               {isSoldOut && (
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                  <span className="bg-red-600 text-white font-bold px-6 py-2 rounded-full transform -rotate-12 border-2 border-white shadow-lg">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                  <span className="transform -rotate-12 rounded-full border-2 border-white bg-red-600 px-6 py-2 font-bold text-white shadow-lg">
                     ESGOTADO
                   </span>
                 </div>
               )}
+              {storyVideos.length > 0 && !showVideo && (
+                <button
+                  onClick={() => {
+                    setActiveVideoIndex(0);
+                    setShowVideo(true);
+                  }}
+                  className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-sm font-bold text-white backdrop-blur hover:bg-black/75"
+                >
+                  <Video size={16} /> {storyVideos.length > 1 ?"Ver vídeos" : "Ver vídeo"}
+                </button>
+              )}
             </div>
 
+            {(allImages.length > 1 || storyVideos.length > 1) && (
+              <p className="mx-auto max-w-[430px] text-center text-[11px] uppercase tracking-[0.18em] text-gray-400 lg:max-w-none">
+                Arraste para o lado para ver a próxima mídia
+              </p>
+            )}
+
+            {showVideo && storyVideos.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {storyVideos.map((videoUrl, index) => (
+                  <button
+                    key={videoUrl}
+                    onClick={() => setActiveVideoIndex(index)}
+                    className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] shadow-sm ${
+                      activeVideoIndex === index
+                        ?"bg-gray-900 text-white"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    Story {index + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {allImages.length > 1 && (
-              <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+              <div className="custom-scrollbar mx-auto flex max-w-[430px] snap-x snap-mandatory gap-2 overflow-x-auto pb-2 sm:gap-3 lg:max-w-none">
                 {allImages.map((img, idx) => (
                   <button
                     key={idx}
-                    onClick={() => setSelectedImage(img)}
-                    className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
-                      selectedImage === img
-                        ? "border-rose-500 ring-2 ring-rose-100"
+                    onClick={() => {
+                      setSelectedImage(img);
+                      setShowVideo(false);
+                    }}
+                    className={`h-16 w-16 flex-shrink-0 snap-start overflow-hidden rounded-2xl border-2 bg-white shadow-sm transition-all sm:h-20 sm:w-20 ${
+                      selectedImage === img && !showVideo
+                        ?"border-rose-500 ring-2 ring-rose-100"
                         : "border-transparent opacity-70 hover:opacity-100"
                     }`}
                   >
-                    <img src={img} className="w-full h-full object-cover" />
+                    <img src={img} alt={`${product.name} ${idx + 1}`} className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="lg:pl-10 space-y-6">
-            <div>
-              <span className="bg-rose-100 text-rose-600 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
-                {product.category}
-              </span>
-              <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mt-3 mb-2 capitalize">
+          <div className="space-y-6 lg:pl-10">
+            <div className="rounded-[2rem] border border-rose-100 bg-gradient-to-b from-white via-rose-50/40 to-white p-5 shadow-[0_24px_60px_-40px_rgba(244,63,94,0.45)] sm:p-6 lg:p-8">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-rose-300">Peça da curadoria</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-rose-600">
+                  {categoryLabel}
+                </span>
+                {product.featured && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-white">
+                    <Sparkles size={12} /> destaque
+                  </span>
+                )}
+                {storyVideos.length > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-black px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-white">
+                    <Video size={12} /> {storyVideos.length > 1 ?`${storyVideos.length} vídeos` : "com vídeo"}
+                  </span>
+                )}
+              </div>
+
+              <h1 className="mt-4 text-[1.9rem] font-bold capitalize leading-tight text-gray-900 sm:text-3xl lg:text-[2.6rem]">
                 {product.name}
               </h1>
-              <p className="text-2xl font-bold text-rose-500">R$ {product.price.toFixed(2)}</p>
-            </div>
 
-            <div className="prose text-gray-600 text-sm leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100">
-              {product.description || "Peca exclusiva selecionada com carinho para voce."}
-            </div>
+              <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p
+                    className="text-xl leading-none text-rose-400"
+                    style={{ fontFamily: "'Great Vibes', cursive" }}
+                  >
+                    selecionada para você
+                  </p>
+                  <p className="mt-2 text-3xl font-bold text-gray-900 lg:text-4xl">
+                    R$ {product.price.toFixed(2)}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Pagamento seguro por PIX ou cartão, com confirmação real do pedido
+                  </p>
+                </div>
 
-            <div className="border-t border-b border-gray-100 py-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <span className="font-bold text-gray-700">Tamanho:</span>
-                  <span className="h-10 px-4 flex items-center justify-center border-2 border-gray-800 rounded-lg font-bold text-gray-800 bg-white">
-                    {product.size || "UN"}
+                <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm ${isSoldOut ?"border-red-200 bg-red-50 text-red-600" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                  {stockMessage}
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-white/70 bg-white/95 p-4 shadow-sm">
+                <p className="text-sm leading-relaxed text-gray-600">
+                  {product.description || "Peça exclusiva selecionada com carinho para você."}
+                </p>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-[1fr_auto]">
+                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-gray-400">
+                    Tamanho
                   </span>
+                  <div className="mt-3 flex items-center gap-3">
+                    <span className="inline-flex h-12 min-w-12 items-center justify-center rounded-xl border-2 border-gray-900 px-4 text-sm font-black text-gray-900 shadow-sm">
+                      {product.size || "UN"}
+                    </span>
+                    <p className="text-sm text-gray-500">
+                      Confira o tamanho antes de finalizar a compra.
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex items-center border border-gray-200 rounded-lg bg-white h-10">
-                  <button
-                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    disabled={isSoldOut || quantity <= 1}
-                    className="px-3 h-full text-gray-400 hover:text-rose-500 disabled:opacity-30"
-                  >
-                    <Minus size={16} />
-                  </button>
-                  <span className="w-8 text-center font-bold text-gray-700">{quantity}</span>
-                  <button
-                    onClick={() => setQuantity((q) => Math.min(maxStock, q + 1))}
-                    disabled={isSoldOut || quantity >= maxStock}
-                    className="px-3 h-full text-gray-400 hover:text-rose-500 disabled:opacity-30"
-                  >
-                    <Plus size={16} />
-                  </button>
+                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:min-w-[190px]">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-gray-400">
+                    Quantidade
+                  </span>
+                  <div className="mt-3 flex h-12 items-center rounded-xl border border-gray-200 bg-gray-50">
+                    <button
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                      disabled={isSoldOut || quantity <= 1}
+                      className="h-full px-4 text-gray-400 hover:text-rose-500 disabled:opacity-30"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="flex-1 text-center font-bold text-gray-700">{quantity}</span>
+                    <button
+                      onClick={() => setQuantity((q) => Math.min(maxStock, q + 1))}
+                      disabled={isSoldOut || quantity >= maxStock}
+                      className="h-full px-4 text-gray-400 hover:text-rose-500 disabled:opacity-30"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <p className="text-xs text-gray-400 text-right">
-                {isSoldOut ? "Sem estoque" : `${maxStock} unidades disponiveis`}
-              </p>
-            </div>
+              <div className="mt-6 hidden flex-col gap-3 md:flex">
+                <button
+                  onClick={handleBuyNow}
+                  disabled={isSoldOut}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-500 py-4 text-lg font-bold text-white shadow-lg shadow-rose-200 transition-all hover:bg-rose-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Comprar Agora
+                </button>
 
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={handleBuyNow}
-                disabled={isSoldOut}
-                className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-rose-200 transition-all flex items-center justify-center gap-2 text-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Comprar Agora
-              </button>
-
-              <button
-                onClick={handleAddToCart}
-                disabled={isSoldOut}
-                className="w-full border-2 border-gray-200 text-gray-600 font-bold py-4 rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ShoppingBag size={20} /> Adicionar a Sacola
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 text-xs text-gray-500 pt-4 text-center">
-              <div className="flex items-center justify-center gap-2">
-                <Truck size={16} className="text-rose-500" /> Entrega para todo Brasil
+                <button
+                  onClick={handleAddToCart}
+                  disabled={isSoldOut}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-gray-200 bg-white py-4 font-bold text-gray-700 transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ShoppingBag size={20} /> Adicionar à Sacola
+                </button>
               </div>
-              <div className="flex items-center justify-center gap-2">
-                <ShieldCheck size={16} className="text-rose-500" /> Pagamento 100% seguro
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-600 shadow-sm">
+                  <div className="flex items-center gap-2 font-semibold text-gray-800">
+                    <Truck size={16} className="text-rose-500" />
+                    Envio flexível
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-gray-500">
+                    Correios, retirada ou envio por Uber conforme sua preferência.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-600 shadow-sm">
+                  <div className="flex items-center gap-2 font-semibold text-gray-800">
+                    <ShieldCheck size={16} className="text-rose-500" />
+                    Compra segura
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-gray-500">
+                    Seu pedido fica registrado e o pagamento passa por confirmação segura.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-600 shadow-sm">
+                  <div className="flex items-center gap-2 font-semibold text-gray-800">
+                    <HeartHandshake size={16} className="text-rose-500" />
+                    Atendimento próximo
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-gray-500">
+                    Se precisar, você consegue alinhar detalhes da entrega direto com a loja.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-rose-100 bg-white/95 backdrop-blur md:hidden">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Peça selecionada</p>
+            <p className="text-lg font-bold text-gray-900">R$ {product.price.toFixed(2)}</p>
+          </div>
+          <button
+            onClick={handleBuyNow}
+            disabled={isSoldOut}
+            className="flex-1 rounded-2xl bg-rose-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-rose-200 transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Comprar agora
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
+
+

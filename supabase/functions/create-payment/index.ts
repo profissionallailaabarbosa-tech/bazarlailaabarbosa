@@ -32,6 +32,10 @@ function jsonResponse(status: number, body: unknown) {
   });
 }
 
+function toCents(value: number) {
+  return Math.round(Number(value || 0) * 100);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -43,11 +47,16 @@ Deno.serve(async (req) => {
 
   try {
     const mpAccessToken = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN");
-    if (!mpAccessToken) {
-      return jsonResponse(500, { error: "Missing MERCADO_PAGO_ACCESS_TOKEN secret" });
+    const supabaseUrl = Deno.env.get("PROJECT_URL");
+    const serviceRole = Deno.env.get("SERVICE_ROLE_KEY");
+    if (!mpAccessToken || !supabaseUrl || !serviceRole) {
+      return jsonResponse(500, { error: "missing_required_secrets" });
     }
 
     const payload = (await req.json()) as CreatePaymentPayload;
+    if (!Number.isFinite(Number(payload?.order_id))) {
+      return jsonResponse(400, { error: "order_id is required" });
+    }
     if (!Array.isArray(payload?.items) || payload.items.length === 0) {
       return jsonResponse(400, { error: "items is required" });
     }
@@ -66,12 +75,59 @@ Deno.serve(async (req) => {
       currency_id: item.currency_id || "BRL",
     }));
 
+    const orderId = Number(payload.order_id);
+    const orderRes = await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}&select=id,status,payment_status,total_amount`, {
+      headers: {
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!orderRes.ok) {
+      return jsonResponse(400, { error: "order_lookup_failed", details: await orderRes.text() });
+    }
+
+    const orderRows = await orderRes.json();
+    const order = Array.isArray(orderRows) ? orderRows[0] || null : null;
+
+    if (!order) {
+      return jsonResponse(404, { error: "order_not_found" });
+    }
+
+    if (String(order.payment_status || "").toLowerCase() === "approved") {
+      return jsonResponse(409, { error: "order_already_paid" });
+    }
+
+    if (String(order.status || "").toLowerCase() === "expirado") {
+      return jsonResponse(409, { error: "order_expired" });
+    }
+
+    const expectedExternalReference = String(orderId);
+    if (payload.external_reference && String(payload.external_reference) !== expectedExternalReference) {
+      return jsonResponse(400, { error: "external_reference_mismatch" });
+    }
+
+    const payloadTotalCents = normalizedItems.reduce(
+      (sum, item) => sum + toCents(item.unit_price) * Number(item.quantity || 0),
+      0,
+    );
+    const orderTotalCents = toCents(Number(order.total_amount || 0));
+
+    if (payloadTotalCents !== orderTotalCents) {
+      return jsonResponse(400, {
+        error: "order_total_mismatch",
+        expected_total: Number(order.total_amount || 0),
+        received_total: payloadTotalCents / 100,
+      });
+    }
+
     const fallbackNotificationUrl = Deno.env.get("MP_WEBHOOK_URL");
 
     const preferenceBody = {
       items: normalizedItems,
       payer: payload.payer_email ? { email: payload.payer_email } : undefined,
-      external_reference: payload.external_reference || (payload.order_id ? String(payload.order_id) : undefined),
+      external_reference: expectedExternalReference,
       back_urls: {
         success: payload.success_url,
         pending: payload.pending_url,

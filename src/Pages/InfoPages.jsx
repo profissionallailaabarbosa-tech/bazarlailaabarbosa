@@ -1,41 +1,49 @@
-import React from 'react';
+﻿import React from "react";
 
-// Texto de Como Comprar
-export const ComoComprar = () => (
-  <div className="max-w-3xl mx-auto px-4 py-12">
-    <h1 className="text-3xl font-bold text-gray-800 mb-6">Como Comprar</h1>
-    <div className="prose text-gray-600 space-y-4">
+function InfoLayout({ eyebrow, title, children }) {
+  return (
+    <div className="min-h-screen bg-[#fffaf7] py-10 font-sans">
+      <div className="mx-auto max-w-3xl px-4">
+        <div className="rounded-[2rem] border border-rose-100 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.05)] sm:p-8">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.24em] text-rose-300">{eyebrow}</p>
+          <h1 className="mb-6 text-3xl font-bold text-gray-800">{title}</h1>
+          <div className="space-y-4 text-[15px] leading-relaxed text-gray-600">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ComoComprar() {
+  return (
+    <InfoLayout eyebrow="Ajuda" title="Como comprar">
       <p>1. Navegue pelo site e escolha suas peças favoritas.</p>
-      <p>2. Clique na peça para ver detalhes, tamanho e fotos.</p>
-      <p>3. Clique em "Adicionar à Sacola" ou "Comprar Agora".</p>
-      <p>4. No carrinho, clique em finalizar, preencha seus dados de entrega.</p>
-      <p>5. Realize o pagamento via PIX (envie o comprovante) ou Cartão.</p>
-      <p>Pronto! Agora é só aguardar seu pedido chegar com muito carinho. 💖</p>
-    </div>
-  </div>
-);
+      <p>2. Clique na peça para ver detalhes, tamanho, fotos e stories quando estiverem disponíveis.</p>
+      <p>3. Toque em <strong>Adicionar à Sacola</strong> ou <strong>Comprar Agora</strong>.</p>
+      <p>4. No checkout, preencha seus dados, escolha a forma de entrega e confirme o pagamento.</p>
+      <p>5. Depois da aprovação, você será direcionada para o WhatsApp da loja para alinhar entrega, retirada ou qualquer detalhe final.</p>
+      <p>Pronto. Seu pedido fica registrado e você ainda pode acompanhar depois em <strong>Meus Pedidos</strong>.</p>
+    </InfoLayout>
+  );
+}
 
-// Texto de Envios
-export const Envios = () => (
-  <div className="max-w-3xl mx-auto px-4 py-12">
-    <h1 className="text-3xl font-bold text-gray-800 mb-6">Envios e Entregas</h1>
-    <div className="prose text-gray-600 space-y-4">
+export function Envios() {
+  return (
+    <InfoLayout eyebrow="Informações" title="Envios e entregas">
       <p>Enviamos para todo o Brasil via <strong>Correios</strong>.</p>
-      <p>Para clientes da cidade, oferecemos entrega via <strong>Uber Flash / 99</strong> ou <strong>Retirada Grátis</strong>.</p>
-      <p><strong>Prazo de Postagem:</strong> Até 2 dias úteis após a confirmação do pagamento.</p>
-      <p>O código de rastreio será enviado para o seu WhatsApp assim que o pedido for postado.</p>
-    </div>
-  </div>
-);
+      <p>Para clientes da cidade, oferecemos entrega via <strong>Uber Flash / 99</strong> ou <strong>retirada grátis</strong>.</p>
+      <p><strong>Prazo de postagem:</strong> até 2 dias úteis após a confirmação do pagamento.</p>
+      <p>Quando o pedido for postado, a loja envia o andamento pelo WhatsApp.</p>
+    </InfoLayout>
+  );
+}
 
-// Texto de Trocas
-export const Trocas = () => (
-  <div className="max-w-3xl mx-auto px-4 py-12">
-    <h1 className="text-3xl font-bold text-gray-800 mb-6">Política de Trocas</h1>
-    <div className="prose text-gray-600 space-y-4">
-      <p>Por se tratar de um bazar com peças únicas (seminovas), <strong>não realizamos trocas por gosto ou tamanho</strong>, apenas em caso de defeito não sinalizado na descrição.</p>
-      <p>Recomendamos conferir as medidas e detalhes na descrição antes de comprar.</p>
-      <p>Caso tenha qualquer dúvida sobre a peça, chame no WhatsApp antes de finalizar a compra!</p>
-    </div>
-  </div>
-);
+export function Trocas() {
+  return (
+    <InfoLayout eyebrow="Política" title="Trocas">
+      <p>Como trabalhamos com peças únicas e seminovas, <strong>não realizamos trocas por gosto, tamanho ou expectativa</strong>.</p>
+      <p>Se houver algum defeito não informado na descrição, fale com a loja pelo WhatsApp para avaliarmos o caso com cuidado.</p>
+      <p>Antes de comprar, confira fotos, vídeos, descrição e, se precisar, tire suas dúvidas no atendimento.</p>
+    </InfoLayout>
+  );
+}

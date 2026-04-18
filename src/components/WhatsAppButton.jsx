@@ -1,30 +1,39 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { db } from '../api/supabase';
 import { resolveWhatsAppBase } from "../utils/whatsapp";
 
 export default function WhatsAppButton() {
-  const [link, setLink] = useState("https://wa.me/"); // Link padrão vazio
+  const [link, setLink] = useState("https://wa.me/");
 
   useEffect(() => {
+    let active = true;
+
     async function loadWhats() {
       const settings = await db.settings.get();
-      // Se tiver número salvo, cria o link. Se não, deixa um padrão.
       const source = settings.whatsapp_number || settings.whatsapp;
-      setLink(resolveWhatsAppBase(source));
+      if (active) {
+        setLink(resolveWhatsAppBase(source));
+      }
     }
+
     loadWhats();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
-    <a 
+    <a
       href={link}
       target="_blank"
       rel="noopener noreferrer"
-      className="fixed bottom-6 right-6 bg-[#25D366] text-white p-4 rounded-full shadow-lg hover:bg-[#128C7E] hover:scale-110 transition-all z-50 animate-bounce"
+      className="fixed bottom-24 right-4 z-50 rounded-full bg-[#25D366] p-3.5 text-white shadow-lg transition-all hover:scale-110 hover:bg-[#128C7E] sm:bottom-24 sm:right-5 md:bottom-6 md:right-6 md:p-4"
       title="Falar com a Laila"
+      aria-label="Falar com a Laila no WhatsApp"
     >
-      <MessageCircle className="w-8 h-8" />
+      <MessageCircle className="h-7 w-7 md:h-8 md:w-8" />
     </a>
   );
 }
