@@ -67,6 +67,12 @@ export default function Admin() {
   const recordingStopTimeoutRef = useRef(null);
   const recordingFinalizeTimeoutRef = useRef(null);
   const isStoppingRecordingRef = useRef(false);
+  const hasPendingSaveGuard =
+    loading ||
+    savingConfig ||
+    isRecording ||
+    isFinalizingRecording ||
+    Boolean(uploadStatus);
 
   const getProductStoryVideos = (product) => {
     const storyVideos = Array.isArray(product?.story_videos)
@@ -134,6 +140,18 @@ export default function Admin() {
   useEffect(() => {
     recordingPreviewUrlRef.current = recordingPreviewUrl;
   }, [recordingPreviewUrl]);
+
+  useEffect(() => {
+    if (!hasPendingSaveGuard) return undefined;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasPendingSaveGuard]);
 
   useEffect(() => {
     let mounted = true;
@@ -864,13 +882,25 @@ export default function Admin() {
                     <button
                       type="button"
                       onClick={resetProductForm}
-                      className="rounded-full border border-gray-200 px-3 py-1 text-[11px] font-bold text-gray-500 hover:bg-gray-50"
+                      disabled={hasPendingSaveGuard}
+                      className="rounded-full border border-gray-200 px-3 py-1 text-[11px] font-bold text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Cancelar edição
                     </button>
                   )}
                 </div>
                 <form onSubmit={handleSaveProduct} className="space-y-3">
+                  {hasPendingSaveGuard && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs leading-relaxed text-rose-700">
+                      <p className="font-bold uppercase tracking-[0.16em] text-rose-600">Nao feche esta pagina agora</p>
+                      <p className="mt-1">
+                        Estamos enviando ou salvando seus arquivos. Se sair agora, alguma foto ou video pode ficar sem concluir.
+                      </p>
+                      <p className="mt-1 text-[11px] text-rose-500">
+                        Se o site travar de verdade, voce ainda consegue sair: o navegador vai mostrar um aviso antes.
+                      </p>
+                    </div>
+                  )}
                   {editingProductId && (mediaRecoveryNotice.image || mediaRecoveryNotice.galleryCount > 0 || mediaRecoveryNotice.storyCount > 0) && (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-relaxed text-amber-800">
                       <p className="font-bold uppercase tracking-[0.16em] text-amber-700">Reenviar mídia deste produto</p>
@@ -886,7 +916,7 @@ export default function Admin() {
                   {/* FOTO DE CAPA */}
                   <div className="w-full aspect-square border-2 border-dashed rounded-lg flex flex-col items-center justify-center hover:bg-gray-50 cursor-pointer relative overflow-hidden bg-gray-50">
                     {form.image ?<img src={form.image} className="w-full h-full object-cover" /> : <div className="text-center text-gray-400"><ImageIcon className="w-8 h-8 mx-auto mb-2"/><span className="text-xs font-bold">Capa Principal</span></div>}
-                    <input type="file" accept="image/*" onChange={handleProductImage} className="absolute inset-0 opacity-0 cursor-pointer" />
+                    <input type="file" accept="image/*" onChange={handleProductImage} disabled={hasPendingSaveGuard} className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed" />
                   </div>
                   {editingProductId && mediaRecoveryNotice.image && !form.image && (
                     <p className="text-[11px] font-bold text-amber-700">Reenvie a capa deste produto antes de salvar.</p>
@@ -899,6 +929,7 @@ export default function Admin() {
                         setForm((prev) => ({ ...prev, image: null }));
                         setImageFile(null);
                       }}
+                      disabled={hasPendingSaveGuard}
                       className="w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-100"
                     >
                       Remover capa
@@ -912,12 +943,12 @@ export default function Admin() {
                           {galleryPreviews.map((src, i) => (
                               <div key={i} className="aspect-square relative rounded overflow-hidden border">
                                   <img src={src} className="w-full h-full object-cover" />
-                                  <button type="button" onClick={() => removeGalleryImage(i)} className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl"><X size={10}/></button>
+                                  <button type="button" onClick={() => removeGalleryImage(i)} disabled={hasPendingSaveGuard} className="absolute top-0 right-0 rounded-bl bg-red-500 p-0.5 text-white disabled:cursor-not-allowed disabled:opacity-60"><X size={10}/></button>
                               </div>
                           ))}
                           <div className="aspect-square border-2 border-dashed rounded flex items-center justify-center hover:bg-gray-50 relative cursor-pointer">
                               <Plus size={20} className="text-gray-400"/>
-                              <input type="file" multiple accept="image/*" onChange={handleGalleryImages} className="absolute inset-0 opacity-0 cursor-pointer" />
+                              <input type="file" multiple accept="image/*" onChange={handleGalleryImages} disabled={hasPendingSaveGuard} className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed" />
                           </div>
                       </div>
                       <p className="text-[10px] text-gray-400">Clique no + para adicionar extras. Em edição, você pode apagar fotos antigas sem recadastrar o produto.</p>
@@ -953,6 +984,7 @@ export default function Admin() {
                                 <button
                                   type="button"
                                   onClick={() => removeStoryVideo(index)}
+                                  disabled={hasPendingSaveGuard}
                                   className="rounded-full border border-red-200 px-2 py-1 text-[10px] font-bold uppercase text-red-500 hover:bg-red-50"
                                 >
                                   Apagar
@@ -980,6 +1012,7 @@ export default function Admin() {
                           <button
                             type="button"
                             onClick={() => startRecorder(index)}
+                            disabled={hasPendingSaveGuard}
                             className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-100"
                           >
                             <Camera size={14} /> {currentVideo ? "Gravar novamente no site" : "Gravar story no site"}
@@ -989,6 +1022,7 @@ export default function Admin() {
                             type="file"
                             accept="video/*"
                             onChange={(e) => handleProductVideo(index, e)}
+                            disabled={hasPendingSaveGuard}
                             className="w-full text-xs text-gray-500 file:mr-2 file:rounded-full file:border file:border-gray-200 file:bg-white file:px-3 file:py-1 file:text-xs hover:file:bg-gray-100"
                           />
                           <input
@@ -1001,6 +1035,7 @@ export default function Admin() {
                             }
                             className="w-full rounded border border-gray-200 bg-white p-2 text-sm"
                             value={currentVideo}
+                            disabled={hasPendingSaveGuard}
                             onChange={(e) =>
                               setForm((prev) => {
                                 const nextVideos = [...(prev.storyVideos || Array(MAX_STORY_VIDEO_COUNT).fill(""))];
@@ -1043,8 +1078,8 @@ export default function Admin() {
                       {uploadStatus}
                     </div>
                   )}
-                  <button disabled={loading} className="w-full bg-rose-500 text-white font-bold py-2 rounded hover:bg-rose-600 text-sm flex justify-center items-center disabled:cursor-not-allowed disabled:opacity-70">
-                    {loading ?<Loader2 className="animate-spin w-5 h-5"/> : editingProductId ? "Salvar alterações" : "Cadastrar Produto"}
+                  <button disabled={hasPendingSaveGuard} className="w-full bg-rose-500 text-white font-bold py-2 rounded hover:bg-rose-600 text-sm flex justify-center items-center disabled:cursor-not-allowed disabled:opacity-70">
+                    {loading ?<Loader2 className="animate-spin w-5 h-5"/> : isRecording || isFinalizingRecording ? "Aguarde a gravacao terminar" : editingProductId ? "Salvar alterações" : "Cadastrar Produto"}
                   </button>
                 </form>
               </div>
