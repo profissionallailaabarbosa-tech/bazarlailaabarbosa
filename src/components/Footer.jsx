@@ -18,7 +18,7 @@ export default function Footer() {
 
   return (
     <footer className="border-t border-white/10 bg-[#111827] pb-8 pt-14 text-white sm:pt-16">
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 md:grid-cols-3 md:gap-12 md:items-start">
+      <div className="mx-auto grid max-w-[28rem] gap-10 px-3 sm:max-w-7xl sm:px-4 md:grid-cols-3 md:gap-12 md:items-start">
         <div>
           <h2 className="brand-name mb-3 text-[2.8rem] leading-none text-rose-300 sm:text-5xl md:text-6xl">
             Laila Barbosa

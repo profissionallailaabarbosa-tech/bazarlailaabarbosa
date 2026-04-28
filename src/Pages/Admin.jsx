@@ -39,6 +39,7 @@ export default function Admin() {
   const [orderFilter, setOrderFilter] = useState("all");
   const [loading, setLoading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
+  const [saveFeedback, setSaveFeedback] = useState(null);
   const [savingConfig, setSavingConfig] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
   const [mediaRecoveryNotice, setMediaRecoveryNotice] = useState({ image: false, galleryCount: 0, storyCount: 0 });
@@ -152,6 +153,12 @@ export default function Admin() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasPendingSaveGuard]);
+
+  useEffect(() => {
+    if (!saveFeedback) return undefined;
+    const timeoutId = window.setTimeout(() => setSaveFeedback(null), 4500);
+    return () => window.clearTimeout(timeoutId);
+  }, [saveFeedback]);
 
   useEffect(() => {
     let mounted = true;
@@ -642,7 +649,10 @@ export default function Admin() {
       const { error } = await query;
 
       if (error) throw error;
-      
+      setSaveFeedback({
+        type: "success",
+        message: editingProductId ? "Produto salvo com sucesso. A vitrine já pode atualizar." : "Produto cadastrado com sucesso. Já pode conferir na vitrine.",
+      });
       alert(editingProductId ? "Produto atualizado com sucesso!" : "Produto e fotos salvos com sucesso!");
       resetProductForm();
       loadData();
@@ -799,6 +809,50 @@ export default function Admin() {
     }
   };
 
+  const formatAdminOrderItemLine = (item) => {
+    const quantity = item.quantitySelected || item.quantity || 1;
+    const size = item.size ? ` | Tam: ${item.size}` : "";
+    const category = item.category ? ` | ${categoryLabels[item.category] || item.category}` : "";
+    const productId = item.id ? ` | ID: ${item.id}` : "";
+    return `${quantity}x ${item.name || "Produto"}${size}${category}${productId}`;
+  };
+
+  const buildOrderSummaryText = (order) => {
+    const itemsText = (order.items || [])
+      .map((item) => `- ${formatAdminOrderItemLine(item)}`)
+      .join("\n");
+
+    return [
+      `Pedido #${order.id}`,
+      `Cliente: ${order.customer_name || "Não informado"}`,
+      `WhatsApp: ${order.customer_phone || "Não informado"}`,
+      `Entrega: ${String(order.delivery_method || "Não informado").replace("_", " ")}`,
+      `Pagamento: ${order.payment_method || "Não informado"}`,
+      `Status: ${order.status || "Sem status"}`,
+      `Status do pagamento: ${getDisplayPaymentStatus(order)}`,
+      `Total: R$ ${Number(order.total_amount || 0).toFixed(2)}`,
+      "",
+      "Itens:",
+      itemsText || "- Nenhum item",
+    ].join("\n");
+  };
+
+  const buildPickingSummaryText = (order) => {
+    const itemsText = (order.items || [])
+      .map((item) => `- ${formatAdminOrderItemLine(item)}`)
+      .join("\n");
+
+    return [
+      `SEPARAÇÃO | Pedido #${order.id}`,
+      `Cliente: ${order.customer_name || "Não informado"}`,
+      `Total: R$ ${Number(order.total_amount || 0).toFixed(2)}`,
+      `Entrega: ${String(order.delivery_method || "Não informado").replace("_", " ")}`,
+      "",
+      "Peças:",
+      itemsText || "- Nenhum item",
+    ].join("\n");
+  };
+
   const canAdvanceOrder = (order) => normalizeOrderValue(order.payment_status) === "approved";
   
   // --- SALVAR CONFIGURAÇÕES ---
@@ -807,13 +861,17 @@ export default function Admin() {
       setSavingConfig(true);
       const { id: _configId, ...configData } = config;
       const whatsappNumber = configData.whatsapp_number || configData.whatsapp || "";
+      const { whatsapp: _legacyWhatsapp, ...restConfig } = configData;
       const payload = {
-        ...configData,
+        ...restConfig,
         whatsapp_number: whatsappNumber,
-        whatsapp: whatsappNumber,
       };
       const { error } = await supabase.from('settings').update(payload).eq('id', 1);
       if (error) throw error;
+      setSaveFeedback({
+        type: "success",
+        message: "Configurações salvas com sucesso. A loja já pode usar esses dados novos.",
+      });
       alert("Configurações salvas com sucesso!");
     } catch (err) { 
         console.error(err);
@@ -838,14 +896,14 @@ export default function Admin() {
           <input
             type="email"
             placeholder="Email admin"
-            className="w-full p-4 border rounded-xl mb-3"
+            className="mb-3 w-full rounded-xl border p-4 text-base sm:text-sm"
             value={loginData.email}
             onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
           />
           <input
             type="password"
             placeholder="Senha"
-            className="w-full p-4 border rounded-xl mb-4"
+            className="mb-4 w-full rounded-xl border p-4 text-base sm:text-sm"
             value={loginData.password}
             onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
           />
@@ -859,17 +917,22 @@ export default function Admin() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-700 pb-20 animate-in fade-in">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-20 shadow-sm">
-        <h1 className="text-xl font-bold text-rose-500">Painel Admin</h1>
-        <div className="flex gap-2 text-sm">
+      <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur sm:px-6 sm:py-4">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-rose-500">Painel Admin</h1>
+            <p className="text-xs text-gray-400">Produtos, pedidos e configurações da loja em um só lugar.</p>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1 text-sm">
           <button onClick={() => setActiveTab("products")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "products" ?"bg-rose-500 text-white" : "bg-gray-100"}`}>Produtos</button>
           <button onClick={() => setActiveTab("orders")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "orders" ?"bg-rose-500 text-white" : "bg-gray-100"}`}>Pedidos</button>
           <button onClick={() => setActiveTab("config")} className={`px-4 py-2 rounded-full font-bold transition ${activeTab === "config" ?"bg-rose-500 text-white" : "bg-gray-100"}`}>Configurações</button>
           <button onClick={handleLogout} className="ml-2 px-3 py-2 rounded-full border border-gray-200 text-red-500 hover:bg-red-50">Sair</button>
+          </div>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto p-6">
+      <div className="mx-auto max-w-6xl p-4 sm:p-6">
         {activeTab === "products" && (
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1">
@@ -957,12 +1020,12 @@ export default function Admin() {
                       )}
                   </div>
 
-                  <input placeholder="Nome" className="w-full p-2 bg-gray-50 rounded text-sm border border-gray-200" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-                  <textarea rows="3" placeholder="Descrição..." className="w-full p-2 bg-gray-50 rounded text-sm resize-none border border-gray-200" value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+                  <input placeholder="Nome" className="w-full rounded border border-gray-200 bg-gray-50 p-3 text-base sm:text-sm" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+                  <textarea rows="3" placeholder="Descrição..." className="w-full resize-none rounded border border-gray-200 bg-gray-50 p-3 text-base sm:text-sm" value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
                   <div className="grid grid-cols-3 gap-2">
-                    <input placeholder="R$" className="w-full p-2 bg-gray-50 rounded text-sm border border-gray-200" value={form.price} onChange={e => setForm({...form, price: e.target.value})} />
-                    <input placeholder="Tam" className="w-full p-2 bg-gray-50 rounded text-sm border border-gray-200" value={form.size} onChange={e => setForm({...form, size: e.target.value})} />
-                    <input type="number" placeholder="Qtd" className="w-full p-2 bg-gray-50 rounded text-sm border border-gray-200" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} />
+                    <input placeholder="R$" className="w-full rounded border border-gray-200 bg-gray-50 p-3 text-base sm:text-sm" value={form.price} onChange={e => setForm({...form, price: e.target.value})} />
+                    <input placeholder="Tam" className="w-full rounded border border-gray-200 bg-gray-50 p-3 text-base sm:text-sm" value={form.size} onChange={e => setForm({...form, size: e.target.value})} />
+                    <input type="number" placeholder="Qtd" className="w-full rounded border border-gray-200 bg-gray-50 p-3 text-base sm:text-sm" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} />
                   </div>
                   <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
@@ -1058,7 +1121,7 @@ export default function Admin() {
                       <p><span className="font-semibold text-gray-500">Gravação no site:</span> o story já sai com limite de 15 segundos para facilitar o cadastro.</p>
                     </div>
                   </div>
-                  <select className="w-full p-2 bg-gray-50 rounded text-sm border border-gray-200" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                  <select className="w-full rounded border border-gray-200 bg-gray-50 p-3 text-base sm:text-sm" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
                     {Object.entries(categoryLabels).map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
@@ -1078,6 +1141,11 @@ export default function Admin() {
                       {uploadStatus}
                     </div>
                   )}
+                  {saveFeedback?.type === "success" && (
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700">
+                      {saveFeedback.message}
+                    </div>
+                  )}
                   <button disabled={hasPendingSaveGuard} className="w-full bg-rose-500 text-white font-bold py-2 rounded hover:bg-rose-600 text-sm flex justify-center items-center disabled:cursor-not-allowed disabled:opacity-70">
                     {loading ?<Loader2 className="animate-spin w-5 h-5"/> : isRecording || isFinalizingRecording ? "Aguarde a gravacao terminar" : editingProductId ? "Salvar alterações" : "Cadastrar Produto"}
                   </button>
@@ -1086,6 +1154,11 @@ export default function Admin() {
             </div>
             
             <div className="lg:col-span-2 space-y-3">
+              <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Visão rápida</p>
+                <h2 className="mt-2 text-lg font-bold text-gray-800">Produtos cadastrados</h2>
+                <p className="mt-1 text-sm text-gray-500">Busque, filtre e edite peças sem sair da mesma tela.</p>
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-gray-400 font-bold">Produtos</p>
@@ -1105,20 +1178,20 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-3">
+              <div className="sticky top-[5.75rem] z-10 bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-3">
                 <div className="relative flex-1">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     value={productSearch}
                     onChange={(e) => setProductSearch(e.target.value)}
                     placeholder="Buscar por nome, categoria ou tamanho"
-                    className="w-full p-3 pl-10 rounded-lg border border-gray-200 text-sm"
+                    className="w-full rounded-lg border border-gray-200 p-3 pl-10 text-base sm:text-sm"
                   />
                 </div>
                 <select
                   value={productFilter}
                   onChange={(e) => setProductFilter(e.target.value)}
-                  className="p-3 rounded-lg border border-gray-200 text-sm md:w-52"
+                  className="rounded-lg border border-gray-200 p-3 text-base sm:text-sm md:w-52"
                 >
                   <option value="all">Todos</option>
                   <option value="available">Disponíveis</option>
@@ -1151,7 +1224,7 @@ export default function Admin() {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleEditProduct(p)}
-                      className="rounded-full border border-gray-200 px-3 py-2 text-[11px] font-bold text-gray-500 hover:bg-gray-50"
+                      className="rounded-full border border-gray-200 px-3 py-2.5 text-[11px] font-bold text-gray-500 hover:bg-gray-50"
                     >
                       Editar
                     </button>
@@ -1170,6 +1243,11 @@ export default function Admin() {
         
         {activeTab === "orders" && (
             <div className="space-y-4">
+              <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Operação</p>
+                <h2 className="mt-2 text-lg font-bold text-gray-800">Pedidos em andamento</h2>
+                <p className="mt-1 text-sm text-gray-500">Filtre rápido, copie os dados e marque as etapas sem se perder.</p>
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <button onClick={() => setOrderFilter("all")} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-left">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-gray-400 font-bold">Pedidos</p>
@@ -1189,20 +1267,20 @@ export default function Admin() {
                 </button>
               </div>
 
-              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-3">
+              <div className="sticky top-[5.75rem] z-10 bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-3">
                 <div className="relative flex-1">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     value={orderSearch}
                     onChange={(e) => setOrderSearch(e.target.value)}
                     placeholder="Buscar por pedido, nome ou WhatsApp"
-                    className="w-full p-3 pl-10 rounded-lg border border-gray-200 text-sm"
+                    className="w-full rounded-lg border border-gray-200 p-3 pl-10 text-base sm:text-sm"
                   />
                 </div>
                 <select
                   value={orderFilter}
                   onChange={(e) => setOrderFilter(e.target.value)}
-                  className="p-3 rounded-lg border border-gray-200 text-sm md:w-56"
+                  className="rounded-lg border border-gray-200 p-3 text-base sm:text-sm md:w-56"
                 >
                   <option value="all">Todos</option>
                   <option value="pending">Pagamento pendente</option>
@@ -1221,7 +1299,9 @@ export default function Admin() {
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-bold text-base text-gray-800">Pedido #{order.id}</h3>
+                          <div className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5">
+                            <h3 className="font-bold text-sm text-rose-600">Pedido #{order.id}</h3>
+                          </div>
                           <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${getStatusBadgeClass(order.status)}`}>
                             {order.status || "Sem status"}
                           </span>
@@ -1240,6 +1320,22 @@ export default function Admin() {
                             >
                               <Clipboard size={12} />
                               copiar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard("Resumo do pedido", buildOrderSummaryText(order))}
+                              className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-100"
+                            >
+                              <Clipboard size={12} />
+                              copiar resumo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard("Resumo de separação", buildPickingSummaryText(order))}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"
+                            >
+                              <Clipboard size={12} />
+                              copiar separação
                             </button>
                           </div>
                           <p>Entrega: {String(order.delivery_method || "Não informado").replace("_", " ")}</p>
@@ -1295,12 +1391,29 @@ export default function Admin() {
                         <div className="space-y-2">
                           {(order.items || []).map((item, idx) => (
                             <div key={`${order.id}-${idx}`} className="flex items-center justify-between gap-3 text-sm">
-                              <div>
-                                <p className="font-medium text-gray-800">{item.name || "Produto"}</p>
-                                <p className="text-xs text-gray-500">
-                                  Qtd: {item.quantitySelected || item.quantity || 1}
-                                  {item.size ?` | Tam: ${item.size}` : ""}
-                                </p>
+                              <div className="flex min-w-0 items-center gap-3">
+                                <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                                  {item.image ? (
+                                    <img
+                                      src={sanitizeMediaUrl(item.image) || item.image}
+                                      alt={item.name || "Produto"}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-[9px] font-bold uppercase tracking-[0.18em] text-gray-300">
+                                      sem foto
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium text-gray-800">{item.name || "Produto"}</p>
+                                  <p className="text-xs text-gray-500">
+                                    Qtd: {item.quantitySelected || item.quantity || 1}
+                                    {item.size ?` | Tam: ${item.size}` : ""}
+                                    {item.category ?` | ${categoryLabels[item.category] || item.category}` : ""}
+                                    {item.id ?` | ID: ${item.id}` : ""}
+                                  </p>
+                                </div>
                               </div>
                               <span className="font-bold text-gray-700">
                                 R$ {Number(item.price || 0).toFixed(2)}

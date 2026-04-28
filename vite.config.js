@@ -4,9 +4,24 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const buildId = new Date().toISOString()
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'inject-build-id',
+      transformIndexHtml(html) {
+        return html.replace(
+          '</head>',
+          `    <meta name="app-build-id" content="${buildId}" />\n  </head>`
+        )
+      },
+    },
+  ],
+  define: {
+    __APP_BUILD_ID__: JSON.stringify(buildId),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

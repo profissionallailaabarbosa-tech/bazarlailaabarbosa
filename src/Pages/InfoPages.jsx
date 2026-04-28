@@ -3,7 +3,7 @@
 function InfoLayout({ eyebrow, title, children }) {
   return (
     <div className="min-h-screen bg-[#fffaf7] py-10 font-sans">
-      <div className="mx-auto max-w-3xl px-4">
+      <div className="mx-auto max-w-[28rem] px-3 sm:max-w-3xl sm:px-4">
         <div className="rounded-[2rem] border border-rose-100 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.05)] sm:p-8">
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.24em] text-rose-300">{eyebrow}</p>
           <h1 className="mb-6 text-3xl font-bold text-gray-800">{title}</h1>

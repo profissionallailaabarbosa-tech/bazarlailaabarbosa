@@ -21,7 +21,7 @@ declare
 begin
   v_phone := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
 
-  if length(v_phone) < 10 then
+  if length(v_phone) < 10 or p_order_id is null then
     return;
   end if;
 
@@ -39,11 +39,8 @@ begin
     or regexp_replace(coalesce(o.customer_phone, ''), '\D', '', 'g') = right(v_phone, 11)
     or right(regexp_replace(coalesce(o.customer_phone, ''), '\D', '', 'g'), 11) = right(v_phone, 11)
   )
-  and (
-    p_order_id is null
-    or o.id = p_order_id
-  )
-  order by o.created_at desc;
+  and o.id = p_order_id
+  limit 1;
 end;
 $$;
 

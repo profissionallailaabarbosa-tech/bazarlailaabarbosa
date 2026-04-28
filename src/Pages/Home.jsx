@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, Volume2, VolumeX, ChevronLeft, ChevronRight, Video } from "lucide-react";
 import { supabase } from "../api/supabase";
 import ProductCard from "../components/ProductCard";
@@ -121,7 +121,7 @@ export default function Home() {
   const getProductCoverImage = (product) =>
     sanitizeMediaUrl((product?.gallery || []).find((url) => sanitizeMediaUrl(url))) ||
     sanitizeMediaUrl(product?.image) ||
-    "/sem-imagem.png";
+    "";
 
   const filteredProducts = products.filter((product) => {
     const categoryMatch =
@@ -352,8 +352,8 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-white font-sans">
-      <section className="relative flex min-h-[520px] items-center overflow-hidden bg-[#f5e6e0] md:min-h-[620px]">
+    <div className="min-h-screen bg-[#fffdfb] font-sans">
+      <section className="relative mx-3 mt-2 flex min-h-[520px] items-center overflow-hidden rounded-[2.25rem] border border-white/70 bg-[#f5e6e0] shadow-[0_24px_70px_rgba(15,23,42,0.08)] sm:mx-0 sm:mt-0 sm:rounded-none sm:border-0 sm:shadow-none md:min-h-[620px]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.58),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_28%)]" />
         <div className="absolute left-4 top-1/2 hidden -translate-y-1/2 select-none text-6xl font-light text-gray-400/30 md:block">
           &lt;
@@ -362,7 +362,7 @@ export default function Home() {
           &gt;
         </div>
 
-        <div className="mx-auto flex h-full w-full max-w-7xl flex-col items-center px-4 pt-8 md:flex-row md:pt-0">
+        <div className="mx-auto flex h-full w-full max-w-[28rem] flex-col items-center px-3 pt-8 sm:max-w-7xl sm:px-4 md:flex-row md:pt-0">
           <div className="relative z-10 mb-8 flex w-full flex-col items-start pl-1 text-left sm:pl-4 md:mb-0 md:w-5/12 md:pl-12">
             <div className="mb-4 inline-flex items-center rounded-full border border-white/60 bg-white/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-gray-600 shadow-sm backdrop-blur-sm">
               Curadoria autoral
@@ -408,7 +408,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="products-section" className="mx-auto max-w-7xl px-4 py-8">
+      <section id="products-section" className="mx-auto max-w-[28rem] px-3 py-8 sm:max-w-7xl sm:px-4">
         <div className="mb-8 grid gap-4 md:grid-cols-3">
           <div className="rounded-[1.6rem] border border-rose-100 bg-[#fff7f4] p-5 shadow-[0_12px_34px_rgba(244,63,94,0.06)]">
             <p className="mb-2 text-[11px] uppercase tracking-[0.2em] text-rose-300">Curadoria</p>
@@ -428,6 +428,21 @@ export default function Home() {
           </div>
         </div>
 
+        <div className="mb-8 grid gap-3 md:grid-cols-3">
+          <div className="rounded-[1.4rem] border border-gray-100 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Como funciona</p>
+            <p className="mt-2 text-sm text-gray-700">Escolha a peça, finalize com segurança e receba o número do pedido na confirmação.</p>
+          </div>
+          <div className="rounded-[1.4rem] border border-gray-100 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Entrega clara</p>
+            <p className="mt-2 text-sm text-gray-700">Depois do pagamento, a loja te chama no WhatsApp para alinhar envio, retirada ou Uber.</p>
+          </div>
+          <div className="rounded-[1.4rem] border border-gray-100 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Consulta fácil</p>
+            <p className="mt-2 text-sm text-gray-700">Seu pedido pode ser consultado depois com WhatsApp e número do pedido, de forma mais segura.</p>
+          </div>
+        </div>
+
         <div className="relative mx-auto max-w-2xl">
           <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
           <input
@@ -441,7 +456,7 @@ export default function Home() {
       </section>
 
       {storiesProducts.length > 0 && (
-        <section className="mx-auto max-w-7xl px-4 pb-6">
+        <section className="mx-auto max-w-[28rem] px-3 pb-6 sm:max-w-7xl sm:px-4">
           <div className="overflow-hidden rounded-[2rem] border border-rose-100 bg-gradient-to-br from-[#fff7f4] via-white to-[#fff1f5] shadow-[0_20px_70px_rgba(244,63,94,0.09)]">
             <div className="grid gap-6 px-5 py-6 md:grid-cols-[1.05fr_2fr] md:px-7 md:py-8">
               <div className="flex flex-col justify-between">
@@ -515,7 +530,7 @@ export default function Home() {
         </section>
       )}
 
-      <section className="mx-auto max-w-7xl px-4 pb-12">
+      <section className="mx-auto max-w-[28rem] px-3 pb-12 sm:max-w-7xl sm:px-4">
         <div className="mb-10 flex gap-2 overflow-x-auto pb-2 md:flex-wrap md:justify-center md:overflow-visible">
           {categories.map((cat) => (
             <button
@@ -684,3 +699,4 @@ export default function Home() {
     </div>
   );
 }
+

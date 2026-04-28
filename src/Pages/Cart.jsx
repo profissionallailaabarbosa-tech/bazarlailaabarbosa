@@ -133,7 +133,7 @@ export default function Cart() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-700 pb-20">
-      <div className="max-w-4xl mx-auto p-4 lg:py-10">
+      <div className="mx-auto max-w-[28rem] p-3 sm:max-w-4xl sm:p-4 lg:py-10">
         <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
           <ShoppingBag className="text-rose-500" /> Minha Sacola
         </h1>

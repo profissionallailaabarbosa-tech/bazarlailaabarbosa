@@ -224,8 +224,8 @@ export default function ProductDetails() {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#fffaf7_100%)] pb-28 pt-4 font-sans text-gray-700 md:pb-20">
-      <div className="mx-auto max-w-6xl px-4 lg:py-10">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#ffffff_0%,#fffaf7_100%)] pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-4 font-sans text-gray-700 md:pb-20">
+      <div className="mx-auto max-w-[28rem] px-3 sm:max-w-6xl sm:px-4 lg:py-10">
         <button
           onClick={() => navigate(-1)}
           className="mb-6 flex items-center font-medium text-gray-500 transition hover:text-rose-500"
@@ -246,6 +246,8 @@ export default function ProductDetails() {
               <img
                 src={selectedImage}
                 alt={product.name}
+                decoding="async"
+                fetchPriority="high"
                 className="h-full w-full animate-in object-cover fade-in duration-500"
               />
               {isSoldOut && (
@@ -283,7 +285,7 @@ export default function ProductDetails() {
                         : "border-transparent opacity-70 hover:opacity-100"
                     }`}
                   >
-                    <img src={img} alt={`${product.name} ${idx + 1}`} className="h-full w-full object-cover" />
+                    <img src={img} alt={`${product.name} ${idx + 1}`} loading="lazy" decoding="async" sizes="80px" className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -326,6 +328,9 @@ export default function ProductDetails() {
                   </p>
                   <p className="mt-1 text-sm text-gray-500">
                     Pagamento seguro por PIX ou cartão, com confirmação real do pedido
+                  </p>
+                  <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-gray-400">
+                    Pedido numerado + confirmação antes do WhatsApp
                   </p>
                 </div>
 
@@ -428,13 +433,16 @@ export default function ProductDetails() {
                   </p>
                 </div>
               </div>
+              <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-3 text-xs leading-relaxed text-rose-700">
+                Depois da aprovação, você recebe a confirmação do pedido e segue para o WhatsApp da loja com o número do pedido em destaque para alinhar a entrega.
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-rose-100 bg-white/95 backdrop-blur md:hidden">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Peça selecionada</p>
             <p className="text-lg font-bold text-gray-900">R$ {product.price.toFixed(2)}</p>

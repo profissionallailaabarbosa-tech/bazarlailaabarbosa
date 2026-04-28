@@ -33,6 +33,13 @@ const formatCpfDisplay = (value) => {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 };
 
+const formatOrderItemLine = (item) => {
+  const quantity = item.quantitySelected || item.quantity || 1;
+  const size = item.size ? ` | Tam: ${item.size}` : "";
+  const category = item.category ? ` | ${String(item.category).replace(/^./, (char) => char.toUpperCase())}` : "";
+  return `${quantity}x ${item.name || "Produto"}${size}${category}`;
+};
+
 export default function Checkout() {
   const navigate = useNavigate();
   const [cart, setCart] = useState([]);
@@ -44,6 +51,7 @@ export default function Checkout() {
   const [mpReturnHandled, setMpReturnHandled] = useState(false);
   const [mpReturnState, setMpReturnState] = useState(null);
   const [approvedRedirectCountdown, setApprovedRedirectCountdown] = useState(4);
+  const [paymentReturnRefreshKey, setPaymentReturnRefreshKey] = useState(0);
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -140,7 +148,7 @@ export default function Checkout() {
     const buildItemsSummary = (items = []) =>
       (items || [])
         .slice(0, 4)
-        .map((item) => `${item.quantitySelected || item.quantity || 1}x ${item.name}`)
+        .map((item) => formatOrderItemLine(item))
         .join(", ");
 
     const buildOrderWhatsAppUrl = (orderData, statusMessage) => {
@@ -212,7 +220,23 @@ export default function Checkout() {
     return () => {
       cancelled = true;
     };
-  }, [config, mpReturnHandled]);
+  }, [config, mpReturnHandled, paymentReturnRefreshKey]);
+
+  const redirectToExternal = (url, options = {}) => {
+    if (!url) return;
+    const { replace = false, handled = false } = options;
+    if (handled) setMpReturnHandled(true);
+    if (replace) {
+      window.location.replace(url);
+      return;
+    }
+    window.location.href = url;
+  };
+
+  const refreshPaymentStatus = () => {
+    setMpReturnHandled(false);
+    setPaymentReturnRefreshKey((current) => current + 1);
+  };
 
   useEffect(() => {
     if (mpReturnState?.stage !== "approved" || !mpReturnState?.continueUrl) {
@@ -224,8 +248,7 @@ export default function Checkout() {
       setApprovedRedirectCountdown((current) => {
         if (current <= 1) {
           window.clearInterval(intervalId);
-          setMpReturnHandled(true);
-          window.location.href = mpReturnState.continueUrl;
+          redirectToExternal(mpReturnState.continueUrl, { replace: true, handled: true });
           return 0;
         }
         return current - 1;
@@ -268,6 +291,10 @@ export default function Checkout() {
   const subtotal = cart.reduce((acc, item) => acc + parseFloat(item.price) * (item.quantitySelected || item.quantity || 1), 0);
   const currentCepDigits = (formData.address.cep || "").replace(/\D/g, "");
   const requiresAddress = formData.delivery_method !== "retirada";
+  const hasConfiguredDeliveryMethods = !!(config?.enable_shipping_calc || config?.enable_pickup || config?.enable_uber);
+  const isPickupEnabled = config ? (!!config.enable_pickup || !hasConfiguredDeliveryMethods) : true;
+  const isShippingEnabled = !!config?.enable_shipping_calc;
+  const isUberEnabled = !!config?.enable_uber;
   const shippingPrice = useMemo(() => {
     if (formData.delivery_method !== "correios" || !config?.enable_shipping_calc) return 0;
     if (cartShippingQuote && cartShippingQuote.cep === currentCepDigits) return parseFloat(cartShippingQuote.price) || 0;
@@ -284,7 +311,7 @@ export default function Checkout() {
   const getCpfDigits = (value) => digitsOnly(value);
   const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
   const whatsappBase = resolveWhatsAppBase(config?.whatsapp_number || config?.whatsapp);
-  const isDeliveryMethodAvailable = (method) => method === "correios" ?!!config?.enable_shipping_calc : method === "retirada" ?!!config?.enable_pickup : method === "uber" ?!!config?.enable_uber : false;
+  const isDeliveryMethodAvailable = (method) => method === "correios" ?isShippingEnabled : method === "retirada" ?isPickupEnabled : method === "uber" ?isUberEnabled : false;
   const isPaymentMethodAvailable = (method) => method === "pix" ?!!config?.enable_pix : method === "card" ?!!config?.enable_credit_card : false;
   const getCustomerError = () =>
     !formData.name?.trim()
@@ -299,6 +326,19 @@ export default function Checkout() {
   const getAddressError = () => !requiresAddress ?null : !formData.address.cep?.trim() ?"Informe o CEP." : !formData.address.street?.trim() ?"Informe a rua." : !formData.address.number?.trim() ?"Informe o número." : !formData.address.neighborhood?.trim() ?"Informe o bairro." : !formData.address.city?.trim() ?"Informe a cidade." : !formData.address.state?.trim() ?"Informe o estado (UF)." : null;
   const getStep2Error = () => getCustomerError() || (!isDeliveryMethodAvailable(formData.delivery_method) ?"Selecione uma forma de entrega para continuar." : getAddressError());
   const getFinalizeError = () => getStep2Error() || (!isPaymentMethodAvailable(formData.payment_method) ?"Selecione uma forma de pagamento disponível antes de continuar." : !isDeliveryMethodAvailable(formData.delivery_method) ?"Selecione uma forma de entrega antes de continuar." : !whatsappBase ?"Configure o WhatsApp da loja antes de finalizar pedidos." : null);
+
+  useEffect(() => {
+    const availableMethods = [
+      isShippingEnabled ? "correios" : null,
+      isPickupEnabled ? "retirada" : null,
+      isUberEnabled ? "uber" : null,
+    ].filter(Boolean);
+
+    if (!availableMethods.length) return;
+    if (!availableMethods.includes(formData.delivery_method)) {
+      setFormData((prev) => ({ ...prev, delivery_method: availableMethods[0] }));
+    }
+  }, [isShippingEnabled, isPickupEnabled, isUberEnabled, formData.delivery_method]);
 
   const handleFinalize = async () => {
     const finalizeError = getFinalizeError();
@@ -333,7 +373,7 @@ export default function Checkout() {
         order = data;
       }
 
-      const itemsList = cart.map((item) => `- ${item.quantitySelected || item.quantity || 1}x ${item.name}`).join("\n");
+      const itemsList = cart.map((item) => `- ${formatOrderItemLine(item)}`).join("\n");
       const textoPagamento = formData.payment_method === "pix" ?"PIX" : "Cartão de Crédito";
       const msg = `*NOVO PEDIDO #${order?.id}*\n\n*Cliente:* ${formData.name}\n*WhatsApp:* ${normalizedPhone}\n*CPF:* ${normalizedCpf}\n*E-mail:* ${formData.email}\n*Pagamento:* ${textoPagamento}\n*Entrega:* ${formData.delivery_method}\n\n*Itens:*\n${itemsList}\n\n*Total:* R$ ${total.toFixed(2)}`;
 
@@ -375,7 +415,7 @@ export default function Checkout() {
         }
         const paymentUrl = paymentData?.init_point || paymentData?.sandbox_init_point;
         if (!paymentUrl) throw new Error("Não foi possível gerar link de pagamento.");
-        window.location.href = paymentUrl;
+        redirectToExternal(paymentUrl, { replace: true });
         return;
       }
 
@@ -388,7 +428,7 @@ export default function Checkout() {
       localStorage.removeItem("cart");
       localStorage.removeItem("checkout_data");
       window.dispatchEvent(new Event("cart-updated"));
-      window.location.href = whatsappUrl;
+      redirectToExternal(whatsappUrl, { replace: true });
     } catch (err) {
       console.error(err);
       alert(err?.message || "Erro ao processar pedido. Tente novamente.");
@@ -398,8 +438,8 @@ export default function Checkout() {
 
   if (mpReturnState) {
     return (
-      <div className="min-h-screen bg-rose-50/30 py-8 px-4 font-sans text-gray-700">
-        <div className="max-w-xl mx-auto">
+      <div className="min-h-screen bg-rose-50/30 px-3 py-8 font-sans text-gray-700 sm:px-4">
+        <div className="mx-auto max-w-[28rem] sm:max-w-xl">
           <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 text-center">
             <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${mpReturnState.stage === "approved" ?"bg-green-100 text-green-600" : mpReturnState.stage === "failure" ?"bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"}`}>
               {mpReturnState.stage === "approved" ?<Check size={30} /> : mpReturnState.stage === "failure" ?<Clock size={30} /> : <Loader2 className="animate-spin" size={30} />}
@@ -437,15 +477,15 @@ export default function Checkout() {
             )}
             {mpReturnState.stage === "pending" && (
               <div className="space-y-3">
-                <button onClick={() => window.location.reload()} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">Verificar novamente</button>
-                {mpReturnState.continueUrl && <button onClick={() => { setMpReturnHandled(true); window.location.href = mpReturnState.continueUrl; }} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Falar com a loja no WhatsApp</button>}
+                <button onClick={refreshPaymentStatus} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">Verificar novamente</button>
+                {mpReturnState.continueUrl && <button onClick={() => redirectToExternal(mpReturnState.continueUrl, { replace: true, handled: true })} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Falar com a loja no WhatsApp</button>}
                 <button onClick={() => navigate("/cart")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a sacola</button>
               </div>
             )}
             {(mpReturnState.stage === "approved" || mpReturnState.stage === "failure") && (
               <div className="space-y-3">
-                {mpReturnState.continueUrl && <button onClick={() => { setMpReturnHandled(true); window.location.href = mpReturnState.continueUrl; }} className={`w-full py-3 rounded-xl font-bold transition ${mpReturnState.stage === "approved" ?"bg-green-600 text-white hover:bg-green-700" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}>{mpReturnState.stage === "approved" ?"Ir para o WhatsApp" : "Falar com a loja"}</button>}
-                {mpReturnState.stage === "failure" && <button onClick={() => window.location.reload()} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">Verificar novamente</button>}
+                {mpReturnState.continueUrl && <button onClick={() => redirectToExternal(mpReturnState.continueUrl, { replace: true, handled: true })} className={`w-full py-3 rounded-xl font-bold transition ${mpReturnState.stage === "approved" ?"bg-green-600 text-white hover:bg-green-700" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}>{mpReturnState.stage === "approved" ?"Ir para o WhatsApp" : "Falar com a loja"}</button>}
+                {mpReturnState.stage === "failure" && <button onClick={refreshPaymentStatus} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">Verificar novamente</button>}
                 {mpReturnState.stage === "failure" && <button onClick={() => navigate("/cart")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a sacola</button>}
                 {mpReturnState.stage === "approved" && <button onClick={() => navigate("/")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a loja</button>}
               </div>
@@ -468,8 +508,8 @@ export default function Checkout() {
   }
 
   return (
-    <div className="min-h-screen bg-rose-50/30 py-8 px-4 font-sans text-gray-700">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen bg-rose-50/30 px-3 py-8 font-sans text-gray-700 sm:px-4">
+      <div className="mx-auto max-w-[28rem] sm:max-w-5xl">
         <h1 className="text-2xl font-bold text-center mb-8 text-gray-800">Finalizar Compra</h1>
         <div className="mb-8 overflow-x-auto pb-1">
           <div className="mx-auto flex min-w-max items-center justify-center gap-2 px-2">
@@ -488,26 +528,26 @@ export default function Checkout() {
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <h2 className="flex items-center gap-2 font-bold text-lg mb-4 text-gray-800"><User className="text-rose-500" size={20} /> Seus Dados</h2>
                 <div className="grid md:grid-cols-2 gap-3 mb-6">
-                  <input placeholder="Nome Completo *" className="p-3 border rounded-xl outline-none focus:border-rose-500 transition" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
-                  <input placeholder="WhatsApp (com DDD) *" inputMode="numeric" className="p-3 border rounded-xl outline-none focus:border-rose-500 transition" value={formatPhoneDisplay(formData.phone)} onChange={(e) => setFormData({ ...formData, phone: digitsOnly(e.target.value).slice(0, 11) })} />
-                  <input placeholder="CPF *" inputMode="numeric" className="p-3 border rounded-xl outline-none focus:border-rose-500 transition" value={formatCpfDisplay(formData.cpf)} onChange={(e) => setFormData({ ...formData, cpf: digitsOnly(e.target.value).slice(0, 11) })} />
-                  <input placeholder="E-mail *" className="p-3 border rounded-xl outline-none focus:border-rose-500 transition" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+                  <input placeholder="Nome Completo *" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+                  <input placeholder="WhatsApp (com DDD) *" inputMode="numeric" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formatPhoneDisplay(formData.phone)} onChange={(e) => setFormData({ ...formData, phone: digitsOnly(e.target.value).slice(0, 11) })} />
+                  <input placeholder="CPF *" inputMode="numeric" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formatCpfDisplay(formData.cpf)} onChange={(e) => setFormData({ ...formData, cpf: digitsOnly(e.target.value).slice(0, 11) })} />
+                  <input placeholder="E-mail *" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
                 </div>
                 <h2 className="flex items-center gap-2 font-bold text-lg mb-4 text-gray-800"><MapPin className="text-rose-500" size={20} /> Endereço</h2>
                 <div className="space-y-3">
                   <div className="flex gap-2">
-                    <input placeholder="CEP *" className="p-3 border rounded-xl w-40 outline-none focus:border-rose-500 transition" value={formData.address.cep} onChange={(e) => { const val = e.target.value; setFormData({ ...formData, address: { ...formData.address, cep: val } }); if (val.length >= 8) searchCEP(val); }} />
+                    <input placeholder="CEP *" className="w-40 rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.cep} onChange={(e) => { const val = e.target.value; setFormData({ ...formData, address: { ...formData.address, cep: val } }); if (val.length >= 8) searchCEP(val); }} />
                     {isLoadingCEP && <div className="flex items-center text-sm text-gray-400"><Loader2 className="animate-spin mr-1" /> Buscando...</div>}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <input placeholder="Rua *" className="col-span-2 p-3 border rounded-xl outline-none focus:border-rose-500 transition" value={formData.address.street} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, street: e.target.value } })} />
-                    <input placeholder="Número *" className="p-3 border rounded-xl outline-none focus:border-rose-500 transition" value={formData.address.number} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, number: e.target.value } })} />
+                    <input placeholder="Rua *" className="col-span-2 rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.street} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, street: e.target.value } })} />
+                    <input placeholder="Número *" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.number} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, number: e.target.value } })} />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <input placeholder="Bairro *" className="p-3 border rounded-xl outline-none focus:border-rose-500 transition" value={formData.address.neighborhood} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, neighborhood: e.target.value } })} />
-                    <input placeholder="Cidade *" className="p-3 border rounded-xl outline-none focus:border-rose-500 transition" value={formData.address.city} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, city: e.target.value } })} />
+                    <input placeholder="Bairro *" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.neighborhood} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, neighborhood: e.target.value } })} />
+                    <input placeholder="Cidade *" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.city} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, city: e.target.value } })} />
                   </div>
-                  <input placeholder="Estado (UF) *" className="p-3 border rounded-xl w-24 outline-none focus:border-rose-500 transition" value={formData.address.state} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, state: e.target.value } })} />
+                  <input placeholder="Estado (UF) *" className="w-24 rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.state} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, state: e.target.value } })} />
                 </div>
                 <div className="mt-6 flex justify-end">
                   <button onClick={() => { const err = getCustomerError(); if (err) { alert(err); return; } setCurrentStep(2); }} className="bg-rose-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-200">Continuar para Entrega</button>
@@ -519,9 +559,9 @@ export default function Checkout() {
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <h2 className="flex items-center gap-2 font-bold text-lg mb-4 text-gray-800"><Truck className="text-rose-500" size={20} /> Método de Envio</h2>
                 <div className="space-y-3">
-                  {config?.enable_shipping_calc && <div onClick={() => setFormData({ ...formData, delivery_method: "correios" })} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${formData.delivery_method === "correios" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div><p className="font-bold text-gray-800">Correios / Envio</p><p className="text-xs text-gray-500">Entrega para todo Brasil</p></div><span className="font-bold text-rose-500">R$ {shippingPrice.toFixed(2)}</span></div>}
-                  {config?.enable_pickup && <div onClick={() => setFormData({ ...formData, delivery_method: "retirada" })} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${formData.delivery_method === "retirada" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div><p className="font-bold text-gray-800">Retirada na Loja</p><p className="text-xs text-gray-500">Busque seu pedido</p></div><span className="font-bold text-green-600">Grátis</span></div>}
-                  {config?.enable_uber && <div onClick={() => setFormData({ ...formData, delivery_method: "uber" })} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${formData.delivery_method === "uber" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div><p className="font-bold text-gray-800">Uber Flash / 99</p><p className="text-xs text-gray-500">Entrega expressa</p></div><span className="font-bold text-gray-600">A combinar</span></div>}
+                  {isShippingEnabled && <div onClick={() => setFormData({ ...formData, delivery_method: "correios" })} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${formData.delivery_method === "correios" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div><p className="font-bold text-gray-800">Correios / Envio</p><p className="text-xs text-gray-500">Entrega para todo Brasil</p></div><span className="font-bold text-rose-500">R$ {shippingPrice.toFixed(2)}</span></div>}
+                  {isPickupEnabled && <div onClick={() => setFormData({ ...formData, delivery_method: "retirada" })} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${formData.delivery_method === "retirada" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div><p className="font-bold text-gray-800">Retirada na Loja</p><p className="text-xs text-gray-500">{hasConfiguredDeliveryMethods ? "Busque seu pedido" : "Opção liberada automaticamente até a loja ajustar as entregas"}</p></div><span className="font-bold text-green-600">Grátis</span></div>}
+                  {isUberEnabled && <div onClick={() => setFormData({ ...formData, delivery_method: "uber" })} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${formData.delivery_method === "uber" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div><p className="font-bold text-gray-800">Uber Flash / 99</p><p className="text-xs text-gray-500">Entrega expressa</p></div><span className="font-bold text-gray-600">A combinar</span></div>}
                 </div>
                 <div className="mt-6 flex flex-col-reverse sm:flex-row gap-3">
                   <button onClick={() => setCurrentStep(1)} className="flex-1 border border-gray-300 text-gray-600 px-4 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar</button>
@@ -558,6 +598,9 @@ export default function Checkout() {
                     <div className="rounded-xl bg-white/70 px-3 py-2 text-center">A confirmação é conferida antes de liberar o próximo passo.</div>
                     <div className="rounded-xl bg-white/70 px-3 py-2 text-center">Depois da aprovação, seguimos pelo WhatsApp para alinhar a entrega.</div>
                   </div>
+                  <p className="mt-4 text-[11px] text-center text-blue-800">
+                    O número do pedido acompanha sua confirmação e ajuda na consulta e no atendimento da loja.
+                  </p>
                 </div>
                 <div className="space-y-3 text-sm text-gray-600 mt-4 border-t pt-4">
                   <p><b>Nome:</b> {formData.name}</p>

@@ -22,6 +22,7 @@ export default function ProductCard({ product }) {
     const galleryImage = Array.isArray(images) ? images.find((value) => sanitizeMediaUrl(value)) : "";
     return sanitizeMediaUrl(galleryImage) || sanitizeMediaUrl(image) || "";
   }, [images, image]);
+
   const hasVideo = Boolean(sanitizeMediaUrl(video));
   const [failedSources, setFailedSources] = useState({});
   const imageFailed = !mainImage || Boolean(failedSources[mainImage]);
