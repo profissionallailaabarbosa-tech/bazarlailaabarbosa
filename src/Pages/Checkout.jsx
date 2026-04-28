@@ -222,6 +222,12 @@ export default function Checkout() {
     };
   }, [config, mpReturnHandled, paymentReturnRefreshKey]);
 
+  const clearPendingPaymentState = () => {
+    localStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
+    localStorage.removeItem("checkout_data");
+    window.dispatchEvent(new Event("cart-updated"));
+  };
+
   const redirectToExternal = (url, options = {}) => {
     if (!url) return;
     const { replace = false, handled = false } = options;
@@ -236,6 +242,13 @@ export default function Checkout() {
   const refreshPaymentStatus = () => {
     setMpReturnHandled(false);
     setPaymentReturnRefreshKey((current) => current + 1);
+  };
+
+  const exitPaymentValidation = (destination = "/cart") => {
+    clearPendingPaymentState();
+    setMpReturnHandled(true);
+    setMpReturnState(null);
+    navigate(destination, { replace: true });
   };
 
   useEffect(() => {
@@ -469,7 +482,17 @@ export default function Checkout() {
                 </div>
               </div>
             )}
-            {mpReturnState.stage === "checking" && <p className="text-xs text-gray-400">Não feche esta página enquanto confirmamos seu pagamento.</p>}
+            {mpReturnState.stage === "checking" && (
+              <div className="space-y-3">
+                <p className="text-xs text-gray-400">Não feche esta página enquanto confirmamos seu pagamento.</p>
+                <button
+                  onClick={() => exitPaymentValidation("/cart")}
+                  className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition"
+                >
+                  Não paguei, voltar para a sacola
+                </button>
+              </div>
+            )}
             {mpReturnState.stage === "approved" && mpReturnState.continueUrl && (
               <p className="mb-4 text-xs text-green-700">
                 Você será redirecionada automaticamente para o WhatsApp em {approvedRedirectCountdown}s para combinar a entrega.
@@ -479,14 +502,14 @@ export default function Checkout() {
               <div className="space-y-3">
                 <button onClick={refreshPaymentStatus} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">Verificar novamente</button>
                 {mpReturnState.continueUrl && <button onClick={() => redirectToExternal(mpReturnState.continueUrl, { replace: true, handled: true })} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Falar com a loja no WhatsApp</button>}
-                <button onClick={() => navigate("/cart")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a sacola</button>
+                <button onClick={() => exitPaymentValidation("/cart")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a sacola</button>
               </div>
             )}
             {(mpReturnState.stage === "approved" || mpReturnState.stage === "failure") && (
               <div className="space-y-3">
                 {mpReturnState.continueUrl && <button onClick={() => redirectToExternal(mpReturnState.continueUrl, { replace: true, handled: true })} className={`w-full py-3 rounded-xl font-bold transition ${mpReturnState.stage === "approved" ?"bg-green-600 text-white hover:bg-green-700" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}>{mpReturnState.stage === "approved" ?"Ir para o WhatsApp" : "Falar com a loja"}</button>}
                 {mpReturnState.stage === "failure" && <button onClick={refreshPaymentStatus} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">Verificar novamente</button>}
-                {mpReturnState.stage === "failure" && <button onClick={() => navigate("/cart")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a sacola</button>}
+                {mpReturnState.stage === "failure" && <button onClick={() => exitPaymentValidation("/cart")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a sacola</button>}
                 {mpReturnState.stage === "approved" && <button onClick={() => navigate("/")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a loja</button>}
               </div>
             )}
