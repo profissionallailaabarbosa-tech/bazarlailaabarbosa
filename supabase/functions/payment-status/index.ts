@@ -17,6 +17,36 @@ function digitsOnly(value: unknown) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function normalizePaymentStatus(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getPaymentTimestamp(payment: Record<string, unknown> | null) {
+  return (
+    String(payment?.date_approved || "") ||
+    String(payment?.date_last_updated || "") ||
+    String(payment?.date_created || "")
+  );
+}
+
+function pickBestPayment(results: unknown[]) {
+  const payments = Array.isArray(results) ? [...results] : [];
+  if (!payments.length) return null;
+
+  payments.sort((a, b) => {
+    const aTime = new Date(getPaymentTimestamp(a as Record<string, unknown>) || 0).getTime();
+    const bTime = new Date(getPaymentTimestamp(b as Record<string, unknown>) || 0).getTime();
+    return bTime - aTime;
+  });
+
+  const approvedPayment = payments.find((payment) =>
+    normalizePaymentStatus((payment as Record<string, unknown>)?.status) === "approved"
+  );
+
+  if (approvedPayment) return approvedPayment as Record<string, unknown>;
+  return (payments[0] || null) as Record<string, unknown> | null;
+}
+
 function toPublicOrder(order: Record<string, unknown> | null) {
   if (!order) return null;
   return {
@@ -70,6 +100,16 @@ Deno.serve(async (req) => {
       return json(404, { error: "order_not_found" });
     }
 
+    if (normalizePaymentStatus(initialOrder.payment_status) === "approved") {
+      return json(200, {
+        ok: true,
+        order: toPublicOrder(initialOrder),
+        mp_payment_status: "approved",
+        mp_payment_id: initialOrder.payment_id ? String(initialOrder.payment_id) : null,
+        found_payment: true,
+      });
+    }
+
     const orderPhone = digitsOnly(initialOrder.customer_phone);
     const shouldValidatePhone = customerPhone.length >= 10;
     const phoneMatches =
@@ -82,7 +122,7 @@ Deno.serve(async (req) => {
       return json(403, { error: "unauthorized_order_access" });
     }
 
-    const mpSearchRes = await fetch(`https://api.mercadopago.com/v1/payments/search?external_reference=${orderId}&sort=date_created&criteria=desc&limit=1`, {
+    const mpSearchRes = await fetch(`https://api.mercadopago.com/v1/payments/search?external_reference=${orderId}&sort=date_created&criteria=desc&limit=10`, {
       headers: {
         Authorization: `Bearer ${mpToken}`,
       },
@@ -93,9 +133,9 @@ Deno.serve(async (req) => {
       return json(400, { error: "mp_payment_search_failed", details: mpSearchData, order: toPublicOrder(initialOrder) });
     }
 
-    const latestPayment = mpSearchData?.results?.[0] || null;
+    const selectedPayment = pickBestPayment(mpSearchData?.results || []);
 
-    if (latestPayment?.id && latestPayment?.status) {
+    if (selectedPayment?.id && selectedPayment?.status) {
       const captureRes = await fetch(`${supabaseUrl}/rest/v1/rpc/capture_paid_order_with_stock`, {
         method: "POST",
         headers: {
@@ -106,10 +146,10 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           p_order_id: orderId,
-          p_payment_status: String(latestPayment.status),
-          p_payment_id: String(latestPayment.id),
+          p_payment_status: String(selectedPayment.status),
+          p_payment_id: String(selectedPayment.id),
           p_payment_provider: "mercado_pago",
-          p_paid_at: new Date().toISOString(),
+          p_paid_at: getPaymentTimestamp(selectedPayment) || new Date().toISOString(),
         }),
       });
 
@@ -117,8 +157,8 @@ Deno.serve(async (req) => {
         return json(400, {
           error: "order_capture_failed",
           details: await captureRes.text(),
-          mp_status: latestPayment.status,
-          mp_payment_id: latestPayment.id,
+          mp_status: selectedPayment.status,
+          mp_payment_id: selectedPayment.id,
           order: toPublicOrder(initialOrder),
         });
       }
@@ -129,9 +169,9 @@ Deno.serve(async (req) => {
     return json(200, {
       ok: true,
       order: toPublicOrder(freshOrder),
-      mp_payment_status: latestPayment?.status || null,
-      mp_payment_id: latestPayment?.id ? String(latestPayment.id) : null,
-      found_payment: !!latestPayment,
+      mp_payment_status: selectedPayment?.status || null,
+      mp_payment_id: selectedPayment?.id ? String(selectedPayment.id) : null,
+      found_payment: !!selectedPayment,
     });
   } catch (error) {
     return json(500, {

@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from "react";
+﻿import React, { useMemo, useState } from "react";
 import { Video, ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { sanitizeMediaUrl } from "../utils/media";
 
 export default function ProductCard({ product }) {
-  const { id, images, image, name, price, size, video, quantity, featured, category } = product;
+  const { id, images, image, gallery, name, price, size, video, quantity, featured, category } = product;
   const navigate = useNavigate();
   const categoryLabel =
     {
@@ -19,9 +19,10 @@ export default function ProductCard({ product }) {
   const isSoldOut = stock <= 0;
 
   const mainImage = useMemo(() => {
-    const galleryImage = Array.isArray(images) ? images.find((value) => sanitizeMediaUrl(value)) : "";
-    return sanitizeMediaUrl(galleryImage) || sanitizeMediaUrl(image) || "";
-  }, [images, image]);
+    const galleryImage = Array.isArray(gallery) ? gallery.find((value) => sanitizeMediaUrl(value)) : "";
+    const legacyImage = Array.isArray(images) ? images.find((value) => sanitizeMediaUrl(value)) : "";
+    return sanitizeMediaUrl(galleryImage) || sanitizeMediaUrl(legacyImage) || sanitizeMediaUrl(image) || "";
+  }, [gallery, images, image]);
 
   const hasVideo = Boolean(sanitizeMediaUrl(video));
   const [failedSources, setFailedSources] = useState({});

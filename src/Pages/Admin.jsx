@@ -38,6 +38,8 @@ export default function Admin() {
   const [orderSearch, setOrderSearch] = useState("");
   const [orderFilter, setOrderFilter] = useState("all");
   const [loading, setLoading] = useState(false);
+  const [refreshingOrderId, setRefreshingOrderId] = useState(null);
+  const [syncingPendingOrders, setSyncingPendingOrders] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
   const [saveFeedback, setSaveFeedback] = useState(null);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -854,6 +856,98 @@ export default function Admin() {
   };
 
   const canAdvanceOrder = (order) => normalizeOrderValue(order.payment_status) === "approved";
+
+  const handleRefreshOrderPayment = async (order) => {
+    try {
+      setRefreshingOrderId(order.id);
+      const { data, error } = await supabase.functions.invoke("payment-status", {
+        body: {
+          order_id: Number(order.id),
+          customer_phone: order.customer_phone || "",
+        },
+      });
+
+      if (error) throw error;
+
+      const refreshedOrder = data?.order;
+      await loadData();
+
+      if (normalizeOrderValue(refreshedOrder?.payment_status) === "approved") {
+        alert(`Pedido #${order.id} confirmado como pago e estoque reprocessado.`);
+      } else if (data?.found_payment) {
+        alert(`Pedido #${order.id} ainda não está aprovado. Status atual: ${refreshedOrder?.payment_status || data?.mp_payment_status || "pendente"}.`);
+      } else {
+        alert(`Ainda não encontramos pagamento confirmado para o pedido #${order.id}.`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Não foi possível revisar esse pagamento agora.");
+    } finally {
+      setRefreshingOrderId(null);
+    }
+  };
+
+  const handleSyncPendingOrders = async () => {
+    const pendingOrders = orders
+      .filter((order) => !canAdvanceOrder(order) && !isExpiredPendingOrder(order))
+      .slice(0, 15);
+
+    if (!pendingOrders.length) {
+      alert("Não há pedidos pendentes para revisar agora.");
+      return;
+    }
+
+    try {
+      setSyncingPendingOrders(true);
+
+      const results = await Promise.allSettled(
+        pendingOrders.map((order) =>
+          supabase.functions.invoke("payment-status", {
+            body: {
+              order_id: Number(order.id),
+              customer_phone: order.customer_phone || "",
+            },
+          })
+        )
+      );
+
+      let approvedCount = 0;
+      let awaitingCount = 0;
+      let notFoundCount = 0;
+      let failedCount = 0;
+
+      results.forEach((result) => {
+        if (result.status !== "fulfilled" || result.value?.error) {
+          failedCount += 1;
+          return;
+        }
+
+        const orderData = result.value?.data?.order;
+        if (normalizeOrderValue(orderData?.payment_status) === "approved") {
+          approvedCount += 1;
+          return;
+        }
+
+        if (result.value?.data?.found_payment) {
+          awaitingCount += 1;
+          return;
+        }
+
+        notFoundCount += 1;
+      });
+
+      await loadData();
+
+      alert(
+        `Revisão concluída. ${approvedCount} ${approvedCount === 1 ? "pedido pago confirmado" : "pedidos pagos confirmados"}, ${awaitingCount} ainda aguardando confirmação, ${notFoundCount} sem pagamento encontrado${failedCount ? ` e ${failedCount} com falha na consulta` : ""}.`
+      );
+    } catch (error) {
+      console.error(error);
+      alert("Não foi possível revisar os pagamentos pendentes agora.");
+    } finally {
+      setSyncingPendingOrders(false);
+    }
+  };
   
   // --- SALVAR CONFIGURAÇÕES ---
   const handleSaveConfig = async () => {
@@ -1289,7 +1383,18 @@ export default function Admin() {
                   <option value="sent">Enviados</option>
                   <option value="delivered">Entregues</option>
                 </select>
+                <button
+                  type="button"
+                  onClick={handleSyncPendingOrders}
+                  disabled={syncingPendingOrders}
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {syncingPendingOrders ? "Sincronizando..." : "Sincronizar pendentes"}
+                </button>
               </div>
+              <p className="text-xs text-gray-400">
+                Se um PIX aprovou no banco mas ainda não baixou no estoque, use "Sincronizar pendentes" para revisar os últimos pagamentos.
+              </p>
 
               {filteredOrders.length === 0 ?(
                 <div className="bg-white p-8 rounded text-center text-gray-400">Nenhum pedido encontrado.</div>
@@ -1353,6 +1458,15 @@ export default function Admin() {
                           </div>
                         )}
                         <div className="flex flex-wrap gap-2 md:justify-end">
+                          {!canAdvanceOrder(order) && (
+                            <button
+                              onClick={() => handleRefreshOrderPayment(order)}
+                              disabled={refreshingOrderId === order.id}
+                              className="text-xs bg-amber-50 text-amber-700 px-3 py-2 rounded-lg hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {refreshingOrderId === order.id ? "Conferindo..." : "Revisar pagamento"}
+                            </button>
+                          )}
                           <button
                             onClick={() => updateOrderStatus(order.id, 'Aguardando Separacao')}
                             disabled={!canAdvanceOrder(order)}

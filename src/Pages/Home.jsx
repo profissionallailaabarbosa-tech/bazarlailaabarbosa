@@ -9,6 +9,9 @@ export default function Home() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const MAX_STORY_VIDEO_COUNT = 3;
+  const HOME_PRODUCTS_CACHE_KEY = "home_products_cache_v1";
+  const HOME_BANNER_CACHE_KEY = "home_banner_cache_v1";
+  const PENDING_PAYMENT_STORAGE_KEY = "pending_checkout_order";
   const categoryLabels = {
     vestidos: "Vestidos",
     conjuntos: "Conjuntos",
@@ -26,6 +29,7 @@ export default function Home() {
   const [isStoryMuted, setIsStoryMuted] = useState(true);
   const [storyProgress, setStoryProgress] = useState(0);
   const [storyVideoVisible, setStoryVideoVisible] = useState(false);
+  const [pendingPaymentResume, setPendingPaymentResume] = useState(null);
   const storyVideoRef = useRef(null);
 
   const defaultBanner =
@@ -44,23 +48,47 @@ export default function Home() {
   useEffect(() => {
     let active = true;
 
+    try {
+      const cachedProducts = JSON.parse(localStorage.getItem(HOME_PRODUCTS_CACHE_KEY) || "[]");
+      const cachedBanner = localStorage.getItem(HOME_BANNER_CACHE_KEY);
+      const pendingPayment = JSON.parse(localStorage.getItem(PENDING_PAYMENT_STORAGE_KEY) || "null");
+      if (Array.isArray(cachedProducts) && cachedProducts.length > 0) {
+        setProducts(cachedProducts);
+        setLoading(false);
+      }
+      if (cachedBanner) {
+        setBannerImage(cachedBanner);
+      }
+      if (pendingPayment?.order_id && pendingPayment?.created_at) {
+        const createdAt = new Date(pendingPayment.created_at).getTime();
+        if (Number.isFinite(createdAt) && Date.now() - createdAt < 1000 * 60 * 30) {
+          setPendingPaymentResume(pendingPayment);
+        }
+      }
+    } catch {
+      // ignore invalid local cache
+    }
+
     async function loadData() {
       try {
-        const { data: productsData, error: productsError } = await supabase
-          .from("products")
-          .select("*")
-          .order("id", { ascending: false });
+        const [{ data: productsData, error: productsError }, { data: config, error: configError }] = await Promise.all([
+          supabase.from("products").select("*").order("id", { ascending: false }),
+          supabase.from("settings").select("banner_image_url").eq("id", 1).maybeSingle(),
+        ]);
 
         if (productsError) {
           console.error("Erro ao buscar produtos:", productsError);
         } else if (active) {
-          setProducts(productsData || []);
+          const nextProducts = productsData || [];
+          setProducts(nextProducts);
+          localStorage.setItem(HOME_PRODUCTS_CACHE_KEY, JSON.stringify(nextProducts));
         }
 
-        const { data: config } = await supabase.from("settings").select("banner_image_url").single();
-
-        if (active && config && config.banner_image_url) {
+        if (configError) {
+          console.error("Erro ao buscar configuração da home:", configError);
+        } else if (active && config?.banner_image_url) {
           setBannerImage(config.banner_image_url);
+          localStorage.setItem(HOME_BANNER_CACHE_KEY, config.banner_image_url);
         }
       } catch (error) {
         console.error("Erro geral:", error);
@@ -160,6 +188,11 @@ export default function Home() {
     if (element) {
       element.scrollIntoView({ behavior: "smooth" });
     }
+  };
+
+  const resumePendingPayment = () => {
+    if (!pendingPaymentResume?.order_id) return;
+    navigate(`/checkout?payment=pending&order=${pendingPaymentResume.order_id}&resume=1`);
   };
 
   const openStory = useCallback(
@@ -409,6 +442,21 @@ export default function Home() {
       </section>
 
       <section id="products-section" className="mx-auto max-w-[28rem] px-3 py-8 sm:max-w-7xl sm:px-4">
+        {pendingPaymentResume?.order_id && (
+          <div className="mb-6 rounded-[1.6rem] border border-blue-100 bg-blue-50 p-5 shadow-[0_10px_28px_rgba(59,130,246,0.08)]">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-blue-500">Pagamento em andamento</p>
+            <p className="text-sm leading-relaxed text-blue-900">
+              Se você pagou pelo app do banco e voltou para a loja, toque abaixo para continuar a confirmação do pedido #{pendingPaymentResume.order_id}.
+            </p>
+            <button
+              onClick={resumePendingPayment}
+              className="mt-4 rounded-full bg-blue-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-700"
+            >
+              Continuar confirmação do pedido
+            </button>
+          </div>
+        )}
+
         <div className="mb-8 grid gap-4 md:grid-cols-3">
           <div className="rounded-[1.6rem] border border-rose-100 bg-[#fff7f4] p-5 shadow-[0_12px_34px_rgba(244,63,94,0.06)]">
             <p className="mb-2 text-[11px] uppercase tracking-[0.2em] text-rose-300">Curadoria</p>

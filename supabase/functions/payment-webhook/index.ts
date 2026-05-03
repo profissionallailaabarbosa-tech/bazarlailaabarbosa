@@ -30,6 +30,18 @@ function normalizeWebhookDataId(value: unknown) {
   return /^[a-z0-9]+$/i.test(raw) ? raw.toLowerCase() : raw;
 }
 
+function normalizeTopic(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^topic_/, "")
+    .replace(/_wh$/, "");
+}
+
+function normalizePaymentStatus(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function constantTimeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
   let result = 0;
@@ -75,8 +87,9 @@ async function validateMercadoPagoSignature(req: Request, body: Record<string, u
 
   const tsNumber = Number(ts);
   if (Number.isFinite(tsNumber)) {
-    const ageSeconds = Math.abs(Math.floor(Date.now() / 1000) - tsNumber);
-    if (ageSeconds > 60 * 10) {
+    const signatureTimestampMs = tsNumber > 1_000_000_000_000 ? tsNumber : tsNumber * 1000;
+    const ageMs = Math.abs(Date.now() - signatureTimestampMs);
+    if (ageMs > 1000 * 60 * 10) {
       return { ok: false, reason: "stale_signature" };
     }
   }
@@ -100,70 +113,170 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
 
-    if (webhookSecret) {
+    let signatureValidation = webhookSecret ? "skipped_missing_signature_headers" : "skipped_missing_secret";
+    const hasSignatureHeaders = Boolean(req.headers.get("x-signature") && req.headers.get("x-request-id"));
+
+    if (webhookSecret && hasSignatureHeaders) {
       const validation = await validateMercadoPagoSignature(req, body as Record<string, unknown>, webhookSecret);
       if (!validation.ok) {
         return json(401, { error: "invalid_webhook_signature", reason: validation.reason });
       }
+      signatureValidation = "validated";
     }
 
-    const topic = body?.type || url.searchParams.get("topic");
-    const paymentId =
+    const topic = normalizeTopic(
+      body?.type ||
+      String(body?.action || "").split(".", 2)[0] ||
+      body?.topic ||
+      url.searchParams.get("topic") ||
+      url.searchParams.get("type"),
+    );
+    const resourceId =
       body?.data?.id ||
       url.searchParams.get("data.id") ||
       url.searchParams.get("id");
 
-    if (!paymentId || (topic && topic !== "payment")) {
+    if (!resourceId) {
       return json(200, { ignored: true });
     }
 
-    const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-      headers: { Authorization: `Bearer ${mpToken}` },
-    });
-    const mp = await mpRes.json();
+    const captureOrderPayment = async (payload: {
+      orderId: number;
+      paymentStatus: string;
+      paymentId: string | null;
+      paidAt?: string | null;
+    }) => {
+      const captureRes = await fetch(`${supabaseUrl}/rest/v1/rpc/capture_paid_order_with_stock`, {
+        method: "POST",
+        headers: {
+          apikey: serviceRole,
+          Authorization: `Bearer ${serviceRole}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify({
+          p_order_id: payload.orderId,
+          p_payment_status: payload.paymentStatus,
+          p_payment_id: payload.paymentId,
+          p_payment_provider: "mercado_pago",
+          p_paid_at: payload.paidAt || new Date().toISOString(),
+        }),
+      });
 
-    if (!mpRes.ok) {
-      return json(400, { error: "mp_payment_fetch_failed", details: mp });
+      if (!captureRes.ok) {
+        const txt = await captureRes.text();
+        throw new Error(`order_capture_failed:${txt}`);
+      }
+    };
+
+    const fetchMercadoPagoResource = async (resourceUrl: string) => {
+      const response = await fetch(resourceUrl, {
+        headers: { Authorization: `Bearer ${mpToken}` },
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(JSON.stringify(data));
+      }
+
+      return data as Record<string, unknown>;
+    };
+
+    if (!topic || topic === "payment") {
+      const payment = await fetchMercadoPagoResource(`https://api.mercadopago.com/v1/payments/${resourceId}`);
+      const orderId = payment.external_reference;
+
+      if (!orderId) {
+        return json(200, { ignored: true, reason: "missing_external_reference", signature_validation: signatureValidation });
+      }
+
+      const parsedOrderId = Number(orderId);
+      if (!Number.isFinite(parsedOrderId)) {
+        return json(200, { ignored: true, reason: "invalid_external_reference", signature_validation: signatureValidation });
+      }
+
+      await captureOrderPayment({
+        orderId: parsedOrderId,
+        paymentStatus: String(payment.status || ""),
+        paymentId: payment.id ? String(payment.id) : null,
+        paidAt: String(payment.date_approved || payment.date_last_updated || payment.date_created || ""),
+      });
+
+      return json(200, {
+        ok: true,
+        topic: "payment",
+        order_id: orderId,
+        payment_status: payment.status,
+        signature_validation: signatureValidation,
+      });
     }
 
-    const orderId = mp.external_reference;
-    if (!orderId) {
-      return json(200, { ignored: true, reason: "missing_external_reference" });
+    if (topic === "merchant_order") {
+      const merchantOrder = await fetchMercadoPagoResource(`https://api.mercadopago.com/merchant_orders/${resourceId}`);
+      const orderId = merchantOrder.external_reference;
+
+      if (!orderId) {
+        return json(200, { ignored: true, reason: "missing_external_reference", topic, signature_validation: signatureValidation });
+      }
+
+      const parsedOrderId = Number(orderId);
+      if (!Number.isFinite(parsedOrderId)) {
+        return json(200, { ignored: true, reason: "invalid_external_reference", topic, signature_validation: signatureValidation });
+      }
+
+      const payments = Array.isArray(merchantOrder.payments) ? merchantOrder.payments as Record<string, unknown>[] : [];
+      const approvedPayments = payments.filter((payment) => normalizePaymentStatus(payment.status) === "approved");
+      const approvedAmount = approvedPayments.reduce((sum, payment) => {
+        return sum + Number(payment.total_paid_amount ?? payment.transaction_amount ?? 0);
+      }, 0);
+      const merchantOrderTotal = Number(merchantOrder.total_amount || 0);
+      const latestPayment = [...payments].sort((a, b) => {
+        const aTime = new Date(String(a.date_approved || a.date_created || 0)).getTime();
+        const bTime = new Date(String(b.date_approved || b.date_created || 0)).getTime();
+        return bTime - aTime;
+      })[0] || null;
+      const latestApprovedPayment = [...approvedPayments].sort((a, b) => {
+        const aTime = new Date(String(a.date_approved || a.date_created || 0)).getTime();
+        const bTime = new Date(String(b.date_approved || b.date_created || 0)).getTime();
+        return bTime - aTime;
+      })[0] || null;
+
+      const paymentToCapture =
+        latestApprovedPayment && (merchantOrderTotal <= 0 || approvedAmount >= merchantOrderTotal)
+          ? {
+              paymentStatus: "approved",
+              paymentId: latestApprovedPayment.id ? String(latestApprovedPayment.id) : null,
+              paidAt: String(latestApprovedPayment.date_approved || latestApprovedPayment.date_created || ""),
+            }
+          : latestPayment
+            ? {
+                paymentStatus: String(latestPayment.status || merchantOrder.status || "pending"),
+                paymentId: latestPayment.id ? String(latestPayment.id) : null,
+                paidAt: String(latestPayment.date_last_updated || latestPayment.date_created || ""),
+              }
+            : {
+                paymentStatus: String(merchantOrder.status || "pending"),
+                paymentId: null,
+                paidAt: new Date().toISOString(),
+              };
+
+      await captureOrderPayment({
+        orderId: parsedOrderId,
+        paymentStatus: paymentToCapture.paymentStatus,
+        paymentId: paymentToCapture.paymentId,
+        paidAt: paymentToCapture.paidAt,
+      });
+
+      return json(200, {
+        ok: true,
+        topic: "merchant_order",
+        order_id: orderId,
+        payment_status: paymentToCapture.paymentStatus,
+        signature_validation: signatureValidation,
+      });
     }
 
-    const parsedOrderId = Number(orderId);
-    if (!Number.isFinite(parsedOrderId)) {
-      return json(200, { ignored: true, reason: "invalid_external_reference" });
-    }
-
-    const captureRes = await fetch(`${supabaseUrl}/rest/v1/rpc/capture_paid_order_with_stock`, {
-      method: "POST",
-      headers: {
-        apikey: serviceRole,
-        Authorization: `Bearer ${serviceRole}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify({
-        p_order_id: parsedOrderId,
-        p_payment_status: String(mp.status),
-        p_payment_id: String(mp.id),
-        p_payment_provider: "mercado_pago",
-        p_paid_at: new Date().toISOString(),
-      }),
-    });
-
-    if (!captureRes.ok) {
-      const txt = await captureRes.text();
-      return json(400, { error: "order_capture_failed", details: txt });
-    }
-
-    return json(200, {
-      ok: true,
-      order_id: orderId,
-      payment_status: mp.status,
-      signature_validation: webhookSecret ? "validated" : "skipped_missing_secret",
-    });
+    return json(200, { ignored: true, topic, signature_validation: signatureValidation });
   } catch (e) {
     return json(500, { error: "internal_error", message: e instanceof Error ? e.message : "unknown" });
   }

@@ -485,6 +485,15 @@ export default function Checkout() {
             {mpReturnState.stage === "checking" && (
               <div className="space-y-3">
                 <p className="text-xs text-gray-400">Não feche esta página enquanto confirmamos seu pagamento.</p>
+                <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-900">
+                  Se você pagou pelo app do seu banco e voltou agora, pode ficar tranquila: estamos tentando reencontrar o pagamento e concluir o pedido sem você precisar refazer a compra.
+                </div>
+                <button
+                  onClick={refreshPaymentStatus}
+                  className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition"
+                >
+                  Já paguei, verificar agora
+                </button>
                 <button
                   onClick={() => exitPaymentValidation("/cart")}
                   className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition"
@@ -500,6 +509,9 @@ export default function Checkout() {
             )}
             {mpReturnState.stage === "pending" && (
               <div className="space-y-3">
+                <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                  Isso costuma acontecer quando o PIX foi pago em outro banco e a confirmação ainda está chegando na loja. Aguarde alguns segundos e toque em verificar novamente.
+                </div>
                 <button onClick={refreshPaymentStatus} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">Verificar novamente</button>
                 {mpReturnState.continueUrl && <button onClick={() => redirectToExternal(mpReturnState.continueUrl, { replace: true, handled: true })} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Falar com a loja no WhatsApp</button>}
                 <button onClick={() => exitPaymentValidation("/cart")} className="w-full border border-gray-300 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar para a sacola</button>
@@ -556,12 +568,19 @@ export default function Checkout() {
                   <input placeholder="CPF *" inputMode="numeric" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formatCpfDisplay(formData.cpf)} onChange={(e) => setFormData({ ...formData, cpf: digitsOnly(e.target.value).slice(0, 11) })} />
                   <input placeholder="E-mail *" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
                 </div>
+                <div className="mb-6 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs leading-relaxed text-emerald-800">
+                  Seus dados são usados apenas para identificar o pedido, confirmar o pagamento e alinhar a entrega.
+                  O pagamento acontece no checkout protegido do Mercado Pago, não dentro do site.
+                </div>
                 <h2 className="flex items-center gap-2 font-bold text-lg mb-4 text-gray-800"><MapPin className="text-rose-500" size={20} /> Endereço</h2>
                 <div className="space-y-3">
                   <div className="flex gap-2">
                     <input placeholder="CEP *" className="w-40 rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.cep} onChange={(e) => { const val = e.target.value; setFormData({ ...formData, address: { ...formData.address, cep: val } }); if (val.length >= 8) searchCEP(val); }} />
                     {isLoadingCEP && <div className="flex items-center text-sm text-gray-400"><Loader2 className="animate-spin mr-1" /> Buscando...</div>}
                   </div>
+                  <p className="text-xs text-gray-500">
+                    O CEP só ajuda a preencher seu endereço. A escolha do envio acontece no próximo passo.
+                  </p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <input placeholder="Rua *" className="col-span-2 rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.street} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, street: e.target.value } })} />
                     <input placeholder="Número *" className="rounded-xl border p-3 text-base outline-none transition focus:border-rose-500 sm:text-sm" value={formData.address.number} onChange={(e) => setFormData({ ...formData, address: { ...formData.address, number: e.target.value } })} />
@@ -581,6 +600,9 @@ export default function Checkout() {
             {currentStep === 2 && (
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <h2 className="flex items-center gap-2 font-bold text-lg mb-4 text-gray-800"><Truck className="text-rose-500" size={20} /> Método de Envio</h2>
+                <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-600">
+                  Agora sim você escolhe a forma de entrega. O CEP anterior serviu só para adiantar seu endereço.
+                </div>
                 <div className="space-y-3">
                   {isShippingEnabled && <div onClick={() => setFormData({ ...formData, delivery_method: "correios" })} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${formData.delivery_method === "correios" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div><p className="font-bold text-gray-800">Correios / Envio</p><p className="text-xs text-gray-500">Entrega para todo Brasil</p></div><span className="font-bold text-rose-500">R$ {shippingPrice.toFixed(2)}</span></div>}
                   {isPickupEnabled && <div onClick={() => setFormData({ ...formData, delivery_method: "retirada" })} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${formData.delivery_method === "retirada" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div><p className="font-bold text-gray-800">Retirada na Loja</p><p className="text-xs text-gray-500">{hasConfiguredDeliveryMethods ? "Busque seu pedido" : "Opção liberada automaticamente até a loja ajustar as entregas"}</p></div><span className="font-bold text-green-600">Grátis</span></div>}
@@ -600,6 +622,12 @@ export default function Checkout() {
                   {config?.enable_pix && <div onClick={() => setFormData({ ...formData, payment_method: "pix" })} className={`p-4 border-2 rounded-xl cursor-pointer flex items-center justify-between gap-3 transition-all ${formData.payment_method === "pix" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><div className="flex items-center gap-3"><Smartphone className={formData.payment_method === "pix" ?"text-rose-500" : "text-gray-400"} /><div><span className="font-bold text-gray-700 block">PIX (Aprovação imediata)</span><span className="text-xs text-gray-500">Mais rápido para confirmar e seguir com seu pedido.</span></div></div><span className="text-[11px] uppercase tracking-[0.18em] text-emerald-600 font-bold">Mais usado</span></div>}
                   {config?.enable_credit_card && <div onClick={() => setFormData({ ...formData, payment_method: "card" })} className={`p-4 border-2 rounded-xl cursor-pointer flex items-center gap-3 transition-all ${formData.payment_method === "card" ?"border-rose-500 bg-rose-50" : "border-gray-100 hover:border-gray-300"}`}><CreditCard className={formData.payment_method === "card" ?"text-rose-500" : "text-gray-400"} /><div><span className="font-bold text-gray-700 block">Cartão de Crédito</span><span className="text-xs text-gray-500">Pagamento protegido pelo checkout do Mercado Pago.</span></div></div>}
                 </div>
+                {formData.payment_method === "pix" && (
+                  <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                    Se você for pagar pelo app do seu banco, volte para esta mesma aba depois do pagamento.
+                    Mesmo que o banco abra outra tela, a loja vai tentar retomar a confirmação do pedido quando você voltar.
+                  </div>
+                )}
                 <div className="mt-6 flex flex-col-reverse sm:flex-row gap-3">
                   <button onClick={() => setCurrentStep(2)} className="flex-1 border border-gray-300 text-gray-600 px-4 py-3 rounded-xl font-bold hover:bg-gray-50 transition">Voltar</button>
                   <button onClick={() => { if (!isPaymentMethodAvailable(formData.payment_method)) { alert("Selecione uma forma de pagamento disponível para continuar."); return; } setCurrentStep(4); }} className="flex-1 bg-rose-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-200">Revisar Pedido</button>
@@ -621,6 +649,11 @@ export default function Checkout() {
                     <div className="rounded-xl bg-white/70 px-3 py-2 text-center">A confirmação é conferida antes de liberar o próximo passo.</div>
                     <div className="rounded-xl bg-white/70 px-3 py-2 text-center">Depois da aprovação, seguimos pelo WhatsApp para alinhar a entrega.</div>
                   </div>
+                  {formData.payment_method === "pix" && (
+                    <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                      Pagando pelo app do banco? Depois do PIX, volte para esta aba da loja para ela confirmar seu pedido e te levar para o WhatsApp.
+                    </div>
+                  )}
                   <p className="mt-4 text-[11px] text-center text-blue-800">
                     O número do pedido acompanha sua confirmação e ajuda na consulta e no atendimento da loja.
                   </p>
