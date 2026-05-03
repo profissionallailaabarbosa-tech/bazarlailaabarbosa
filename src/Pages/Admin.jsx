@@ -1427,7 +1427,7 @@ export default function Admin() {
                 </button>
                 </div>
                 <p className="text-xs text-gray-400">
-                  A loja revisa pedidos pendentes automaticamente em produção a cada 5 minutos. Se um PIX aprovou no banco e você quiser forçar na hora, use "Sincronizar pendentes".
+                  Enquanto esta aba de pedidos estiver aberta, o painel revisa pendentes automaticamente. Se um PIX aprovou no banco e você quiser forçar na hora, use "Sincronizar pendentes".
                 </p>
 
               {filteredOrders.length === 0 ?(
