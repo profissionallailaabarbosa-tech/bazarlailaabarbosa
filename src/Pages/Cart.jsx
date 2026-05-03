@@ -1,38 +1,25 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Trash, ShoppingBag, Truck, MapPin, Loader2 } from "lucide-react";
+import { MessageCircle, ShoppingBag, Trash } from "lucide-react";
+
+const readCartStorage = () => JSON.parse(localStorage.getItem("carrinho_laila") || "[]");
 
 export default function Cart() {
   const navigate = useNavigate();
-  const [cart, setCart] = useState([]);
-  const [total, setTotal] = useState(0);
-
-  const [cep, setCep] = useState("");
-  const [address, setAddress] = useState(null);
-  const [shippingOptions, setShippingOptions] = useState(null);
-  const [selectedShipping, setSelectedShipping] = useState(null);
-  const [loadingCep, setLoadingCep] = useState(false);
+  const [cart, setCart] = useState(() => readCartStorage());
 
   useEffect(() => {
-    loadCart();
-    window.addEventListener("storage", loadCart);
-    window.addEventListener("cart-updated", loadCart);
+    const syncCart = () => {
+      setCart(readCartStorage());
+    };
+
+    window.addEventListener("storage", syncCart);
+    window.addEventListener("cart-updated", syncCart);
     return () => {
-      window.removeEventListener("storage", loadCart);
-      window.removeEventListener("cart-updated", loadCart);
+      window.removeEventListener("storage", syncCart);
+      window.removeEventListener("cart-updated", syncCart);
     };
   }, []);
-
-  useEffect(() => {
-    const itemsTotal = cart.reduce((acc, item) => acc + item.price * item.quantitySelected, 0);
-    const frete = selectedShipping ?selectedShipping.price : 0;
-    setTotal(itemsTotal + frete);
-  }, [cart, selectedShipping]);
-
-  function loadCart() {
-    const saved = JSON.parse(localStorage.getItem("carrinho_laila") || "[]");
-    setCart(saved);
-  }
 
   function removeItem(index) {
     const newCart = [...cart];
@@ -53,68 +40,13 @@ export default function Cart() {
     window.dispatchEvent(new Event("cart-updated"));
   }
 
-  async function handleCalculateShipping(e) {
-    e.preventDefault();
-    if (cep.length !== 8) return alert("Digite um CEP válido (8 números)");
-
-    setLoadingCep(true);
-    setShippingOptions(null);
-    setSelectedShipping(null);
-    setAddress(null);
-
-    try {
-      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-      const data = await response.json();
-
-      if (data.erro) {
-        alert("CEP não encontrado!");
-        setLoadingCep(false);
-        return;
-      }
-
-      setAddress(data);
-
-      let pacPrice = 25.0;
-      let sedexPrice = 45.0;
-      let pacDays = 8;
-      let sedexDays = 3;
-
-      if (data.uf === "SP") {
-        pacPrice = 18.9;
-        sedexPrice = 29.9;
-        pacDays = 5;
-        sedexDays = 2;
-      } else if (["MG", "RJ", "PR"].includes(data.uf)) {
-        pacPrice = 28.5;
-        sedexPrice = 55.0;
-        pacDays = 7;
-        sedexDays = 3;
-      } else if (["BA", "PE", "CE", "MA", "AM", "PA"].includes(data.uf)) {
-        pacPrice = 55.0;
-        sedexPrice = 89.9;
-        pacDays = 12;
-        sedexDays = 5;
-      }
-
-      setShippingOptions([
-        { type: "PAC", price: pacPrice, days: pacDays },
-        { type: "SEDEX", price: sedexPrice, days: sedexDays },
-      ]);
-    } catch {
-      alert("Erro ao buscar CEP. Tente novamente.");
-    } finally {
-      setLoadingCep(false);
-    }
-  }
+  const subtotal = cart.reduce(
+    (acc, item) => acc + Number(item.price || 0) * Number(item.quantitySelected || item.quantity || 1),
+    0
+  );
 
   const handleCheckout = () => {
-    const checkoutData = {
-      items: cart,
-      shipping: selectedShipping,
-      address,
-      totalFinal: total,
-    };
-    localStorage.setItem("checkout_data", JSON.stringify(checkoutData));
+    localStorage.setItem("checkout_data", JSON.stringify({ items: cart }));
     navigate("/checkout");
   };
 
@@ -153,7 +85,7 @@ export default function Cart() {
                 <div className="flex-1">
                   <h3 className="font-bold text-gray-800 line-clamp-1">{item.name}</h3>
                   <p className="text-xs text-gray-500 mb-1">Tam: {item.size || "UN"} | {item.category}</p>
-                  <p className="text-rose-500 font-bold">R$ {item.price.toFixed(2)}</p>
+                  <p className="text-rose-500 font-bold">R$ {Number(item.price || 0).toFixed(2)}</p>
                 </div>
 
                 <div className="flex flex-col items-end gap-2">
@@ -161,9 +93,9 @@ export default function Cart() {
                     <Trash size={18} />
                   </button>
                   <div className="flex items-center border border-gray-200 rounded bg-gray-50 h-8">
-                    <button onClick={() => updateQuantity(index, item.quantitySelected - 1)} className="px-2 text-gray-500 hover:text-rose-500 font-bold">-</button>
-                    <span className="w-6 text-center text-xs font-bold">{item.quantitySelected}</span>
-                    <button onClick={() => updateQuantity(index, item.quantitySelected + 1)} className="px-2 text-gray-500 hover:text-rose-500 font-bold">+</button>
+                    <button onClick={() => updateQuantity(index, (item.quantitySelected || 1) - 1)} className="px-2 text-gray-500 hover:text-rose-500 font-bold">-</button>
+                    <span className="w-6 text-center text-xs font-bold">{item.quantitySelected || item.quantity || 1}</span>
+                    <button onClick={() => updateQuantity(index, Number(item.quantitySelected || item.quantity || 1) + 1)} className="px-2 text-gray-500 hover:text-rose-500 font-bold">+</button>
                   </div>
                 </div>
               </div>
@@ -172,77 +104,41 @@ export default function Cart() {
 
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="font-bold text-sm mb-3 flex items-center gap-2"><Truck size={16} className="text-rose-500" /> Calcular Frete</h3>
-
-              <form onSubmit={handleCalculateShipping} className="flex gap-2 mb-3">
-                <input
-                  value={cep}
-                  onChange={(e) => setCep(e.target.value.replace(/\D/g, ""))}
-                  placeholder="Seu CEP"
-                  maxLength={8}
-                  className="flex-1 border border-gray-200 rounded-lg p-2 text-sm outline-none focus:border-rose-500"
-                />
-                <button disabled={loadingCep} className="bg-gray-800 text-white px-4 rounded-lg text-xs font-bold hover:bg-black transition flex items-center">
-                  {loadingCep ?<Loader2 className="animate-spin" /> : "OK"}
-                </button>
-              </form>
-
-              {address && (
-                <div className="text-xs text-gray-500 mb-3 bg-gray-50 p-2 rounded">
-                  <MapPin size={10} className="inline mr-1" />
-                  {address.logradouro}, {address.localidade}-{address.uf}
-                </div>
-              )}
-
-              {shippingOptions && (
-                <div className="space-y-2">
-                  {shippingOptions.map((opt, i) => (
-                    <label
-                      key={i}
-                      className={`flex justify-between items-center p-3 border rounded-lg cursor-pointer transition-all ${selectedShipping?.type === opt.type ?"border-rose-500 bg-rose-50" : "border-gray-200 hover:border-gray-300"}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="shipping"
-                          className="accent-rose-500"
-                          checked={selectedShipping?.type === opt.type}
-                          onChange={() => setSelectedShipping(opt)}
-                        />
-                        <div>
-                          <p className="font-bold text-xs text-gray-800">{opt.type}</p>
-                          <p className="text-[10px] text-gray-500">Chega em até {opt.days} dias úteis</p>
-                        </div>
-                      </div>
-                      <span className="font-bold text-sm text-rose-500">R$ {opt.price.toFixed(2)}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
+              <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
+                <MessageCircle size={16} className="text-rose-500" /> Entrega combinada
+              </h3>
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-900">
+                Nome, WhatsApp e e-mail serão pedidos no checkout.
+                Endereço, frete, Correios, retirada ou entrega ficam combinados depois direto com a loja no WhatsApp.
+              </div>
             </div>
 
             <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
               <div className="space-y-2 text-sm mb-4 border-b border-gray-100 pb-4">
                 <div className="flex justify-between text-gray-500">
                   <span>Subtotal</span>
-                  <span>R$ {cart.reduce((acc, item) => acc + item.price * item.quantitySelected, 0).toFixed(2)}</span>
+                  <span>R$ {subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-gray-500">
-                  <span>Frete</span>
-                  <span>{selectedShipping ?`R$ ${selectedShipping.price.toFixed(2)}` : "--"}</span>
+                  <span>Entrega / frete</span>
+                  <span className="font-semibold text-amber-600">A combinar</span>
                 </div>
               </div>
 
-              <div className="flex justify-between items-end mb-6">
-                <span className="font-bold text-gray-800">Total</span>
+              <div className="flex justify-between items-end mb-3">
+                <span className="font-bold text-gray-800">Total agora</span>
                 <div className="text-right">
-                  <span className="block text-2xl font-bold text-rose-500">R$ {total.toFixed(2)}</span>
-                  <span className="text-[10px] text-gray-400">ou até 3x sem juros</span>
+                  <span className="block text-2xl font-bold text-rose-500">R$ {subtotal.toFixed(2)}</span>
+                  <span className="text-[10px] text-gray-400">valor das peças</span>
                 </div>
               </div>
+
+              <p className="mb-6 text-[11px] leading-relaxed text-gray-400">
+                O valor acima é das peças. O restante da entrega fica alinhado com a loja depois da compra.
+              </p>
 
               <button onClick={handleCheckout} className="w-full bg-rose-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-600 transition active:scale-95 flex justify-center items-center gap-2">
-                Finalizar Compra <Truck size={18} />
+                Ir para o checkout <MessageCircle size={18} />
               </button>
 
               <Link to="/" className="block text-center text-xs text-gray-400 mt-4 hover:text-rose-500 underline">

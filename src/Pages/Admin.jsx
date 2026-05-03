@@ -829,6 +829,7 @@ export default function Admin() {
       `Pedido #${order.id}`,
       `Cliente: ${order.customer_name || "Não informado"}`,
       `WhatsApp: ${order.customer_phone || "Não informado"}`,
+      `Contato / entrega: ${order.address || "Sem detalhes adicionais"}`,
       `Entrega: ${String(order.delivery_method || "Não informado").replace("_", " ")}`,
       `Pagamento: ${order.payment_method || "Não informado"}`,
       `Status: ${order.status || "Sem status"}`,
@@ -1424,10 +1425,10 @@ export default function Admin() {
                 >
                   {syncingPendingOrders ? "Sincronizando..." : "Sincronizar pendentes"}
                 </button>
-              </div>
-              <p className="text-xs text-gray-400">
-                Se um PIX aprovou no banco mas ainda não baixou no estoque, use "Sincronizar pendentes" para revisar os últimos pagamentos.
-              </p>
+                </div>
+                <p className="text-xs text-gray-400">
+                  A loja revisa pedidos pendentes automaticamente em produção a cada 5 minutos. Se um PIX aprovou no banco e você quiser forçar na hora, use "Sincronizar pendentes".
+                </p>
 
               {filteredOrders.length === 0 ?(
                 <div className="bg-white p-8 rounded text-center text-gray-400">Nenhum pedido encontrado.</div>
@@ -1527,9 +1528,9 @@ export default function Admin() {
 
                     <div className="grid lg:grid-cols-2 gap-4">
                       <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                        <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Endereço</h4>
+                        <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Contato e entrega</h4>
                         <p className="text-sm text-gray-700 whitespace-pre-line">
-                          {order.address || "Endereço não informado"}
+                          {order.address || "Sem detalhes adicionais"}
                         </p>
                       </div>
 
