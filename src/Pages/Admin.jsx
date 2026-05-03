@@ -61,6 +61,7 @@ export default function Admin() {
 
   const [form, setForm] = useState({ name: "", description: "", price: "", category: "vestidos", size: "", quantity: "1", image: null, video: "", storyVideos: Array(MAX_STORY_VIDEO_COUNT).fill(""), gallery: [], featured: false });
   const [config, setConfig] = useState({});
+  const pendingOrderAutoSyncRef = useRef(false);
   const cameraVideoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -887,17 +888,25 @@ export default function Admin() {
     }
   };
 
-  const handleSyncPendingOrders = async () => {
+  const handleSyncPendingOrders = React.useCallback(async (silent = false) => {
     const pendingOrders = orders
-      .filter((order) => !canAdvanceOrder(order) && !isExpiredPendingOrder(order))
+      .filter((order) => {
+        const paymentStatus = normalizeOrderValue(order?.payment_status);
+        if (paymentStatus === "approved") return false;
+        if (!order?.created_at) return true;
+        const createdAt = new Date(order.created_at).getTime();
+        if (Number.isNaN(createdAt)) return true;
+        return Date.now() - createdAt < PENDING_EXPIRATION_HOURS * 60 * 60 * 1000;
+      })
       .slice(0, 15);
 
     if (!pendingOrders.length) {
-      alert("Não há pedidos pendentes para revisar agora.");
+      if (!silent) alert("Não há pedidos pendentes para revisar agora.");
       return;
     }
 
     try {
+      if (syncingPendingOrders) return;
       setSyncingPendingOrders(true);
 
       const results = await Promise.allSettled(
@@ -938,16 +947,40 @@ export default function Admin() {
 
       await loadData();
 
-      alert(
-        `Revisão concluída. ${approvedCount} ${approvedCount === 1 ? "pedido pago confirmado" : "pedidos pagos confirmados"}, ${awaitingCount} ainda aguardando confirmação, ${notFoundCount} sem pagamento encontrado${failedCount ? ` e ${failedCount} com falha na consulta` : ""}.`
-      );
+      if (!silent || approvedCount > 0 || failedCount > 0) {
+        alert(
+          `Revisão concluída. ${approvedCount} ${approvedCount === 1 ? "pedido pago confirmado" : "pedidos pagos confirmados"}, ${awaitingCount} ainda aguardando confirmação, ${notFoundCount} sem pagamento encontrado${failedCount ? ` e ${failedCount} com falha na consulta` : ""}.`
+        );
+      }
     } catch (error) {
       console.error(error);
-      alert("Não foi possível revisar os pagamentos pendentes agora.");
+      if (!silent) {
+        alert("Não foi possível revisar os pagamentos pendentes agora.");
+      }
     } finally {
       setSyncingPendingOrders(false);
     }
-  };
+  }, [orders, syncingPendingOrders]);
+
+  useEffect(() => {
+    if (activeTab !== "orders") {
+      pendingOrderAutoSyncRef.current = false;
+      return undefined;
+    }
+
+    if (!pendingOrderAutoSyncRef.current) {
+      pendingOrderAutoSyncRef.current = true;
+      handleSyncPendingOrders(true);
+    }
+
+    const intervalId = window.setInterval(() => {
+      handleSyncPendingOrders(true);
+    }, 45000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeTab, orders, handleSyncPendingOrders]);
   
   // --- SALVAR CONFIGURAÇÕES ---
   const handleSaveConfig = async () => {

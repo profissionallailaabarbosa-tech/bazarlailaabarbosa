@@ -47,6 +47,19 @@ function pickBestPayment(results: unknown[]) {
   return (payments[0] || null) as Record<string, unknown> | null;
 }
 
+function pickMerchantOrder(results: Record<string, unknown>[]) {
+  const merchantOrders = Array.isArray(results) ? [...results] : [];
+  if (!merchantOrders.length) return null;
+
+  merchantOrders.sort((a, b) => {
+    const aTime = new Date(String(a.last_updated || a.date_created || 0)).getTime();
+    const bTime = new Date(String(b.last_updated || b.date_created || 0)).getTime();
+    return bTime - aTime;
+  });
+
+  return merchantOrders[0] || null;
+}
+
 function toPublicOrder(order: Record<string, unknown> | null) {
   if (!order) return null;
   return {
@@ -134,6 +147,25 @@ Deno.serve(async (req) => {
     }
 
     const selectedPayment = pickBestPayment(mpSearchData?.results || []);
+    let fallbackMerchantOrder: Record<string, unknown> | null = null;
+
+    if (!selectedPayment || normalizePaymentStatus(selectedPayment.status) !== "approved") {
+      const merchantOrderSearchRes = await fetch(`https://api.mercadopago.com/merchant_orders/search?external_reference=${orderId}`, {
+        headers: {
+          Authorization: `Bearer ${mpToken}`,
+        },
+      });
+
+      const merchantOrderSearchData = await merchantOrderSearchRes.json().catch(() => ({}));
+      if (merchantOrderSearchRes.ok) {
+        const merchantOrderResults = Array.isArray(merchantOrderSearchData?.elements)
+          ? merchantOrderSearchData.elements
+          : Array.isArray(merchantOrderSearchData?.results)
+            ? merchantOrderSearchData.results
+            : [];
+        fallbackMerchantOrder = pickMerchantOrder(merchantOrderResults as Record<string, unknown>[]);
+      }
+    }
 
     if (selectedPayment?.id && selectedPayment?.status) {
       const captureRes = await fetch(`${supabaseUrl}/rest/v1/rpc/capture_paid_order_with_stock`, {
@@ -162,16 +194,67 @@ Deno.serve(async (req) => {
           order: toPublicOrder(initialOrder),
         });
       }
+    } else if (fallbackMerchantOrder) {
+      const merchantOrderPayments = Array.isArray(fallbackMerchantOrder.payments)
+        ? fallbackMerchantOrder.payments as Record<string, unknown>[]
+        : [];
+      const approvedPayments = merchantOrderPayments.filter((payment) => normalizePaymentStatus(payment.status) === "approved");
+      const approvedAmount = approvedPayments.reduce((sum, payment) => {
+        return sum + Number(payment.total_paid_amount ?? payment.transaction_amount ?? 0);
+      }, 0);
+      const merchantOrderTotal = Number(fallbackMerchantOrder.total_amount || initialOrder.total_amount || 0);
+      const latestApprovedPayment = approvedPayments.sort((a, b) => {
+        const aTime = new Date(getPaymentTimestamp(a) || 0).getTime();
+        const bTime = new Date(getPaymentTimestamp(b) || 0).getTime();
+        return bTime - aTime;
+      })[0] || null;
+
+      if (latestApprovedPayment && (merchantOrderTotal <= 0 || approvedAmount >= merchantOrderTotal)) {
+        const captureRes = await fetch(`${supabaseUrl}/rest/v1/rpc/capture_paid_order_with_stock`, {
+          method: "POST",
+          headers: {
+            apikey: serviceRole,
+            Authorization: `Bearer ${serviceRole}`,
+            "Content-Type": "application/json",
+            Prefer: "return=representation",
+          },
+          body: JSON.stringify({
+            p_order_id: orderId,
+            p_payment_status: "approved",
+            p_payment_id: latestApprovedPayment.id ? String(latestApprovedPayment.id) : null,
+            p_payment_provider: "mercado_pago",
+            p_paid_at: getPaymentTimestamp(latestApprovedPayment) || new Date().toISOString(),
+          }),
+        });
+
+        if (!captureRes.ok) {
+          return json(400, {
+            error: "order_capture_failed",
+            details: await captureRes.text(),
+            mp_status: "approved",
+            mp_payment_id: latestApprovedPayment.id,
+            order: toPublicOrder(initialOrder),
+          });
+        }
+      }
     }
 
     const freshOrder = await fetchOrder();
+    const fallbackApprovedPayment = Array.isArray(fallbackMerchantOrder?.payments)
+      ? (fallbackMerchantOrder?.payments as Record<string, unknown>[]).find((payment) => normalizePaymentStatus(payment.status) === "approved") || null
+      : null;
 
     return json(200, {
       ok: true,
       order: toPublicOrder(freshOrder),
-      mp_payment_status: selectedPayment?.status || null,
-      mp_payment_id: selectedPayment?.id ? String(selectedPayment.id) : null,
-      found_payment: !!selectedPayment,
+      mp_payment_status: selectedPayment?.status || fallbackApprovedPayment?.status || null,
+      mp_payment_id:
+        selectedPayment?.id
+          ? String(selectedPayment.id)
+          : fallbackApprovedPayment?.id
+            ? String(fallbackApprovedPayment.id)
+            : null,
+      found_payment: !!selectedPayment || !!fallbackMerchantOrder,
     });
   } catch (error) {
     return json(500, {
